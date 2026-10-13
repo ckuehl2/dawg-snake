@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dawg Snake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1a0f;
+    --panel: #12261a;
+    --green: #1f6b22;
+    --green-dark: #0d3d12;
+    --red: #8b0d0d;
+    --text: #e8f3ea;
+    --muted: #8fb196;
+    --line: rgba(255,255,255,.12);
+    --gold: #f5c518;
+    color-scheme: dark; /* the game commits to one dark look */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: radial-gradient(ellipse at top, #163a1f 0%, var(--bg) 60%) var(--bg);
+    color: var(--text);
+    font-family: Inter, system-ui, sans-serif;
+    padding-block: 16px; padding-inline: 16px;
+    user-select: none; -webkit-user-select: none;
+  }
+  .app { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px; }
+  .play { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(100%, 624px); }
+  h1 {
+    margin: 0; font-family: 'UnifrakturCook', serif; font-size: clamp(28px, 6vw, 44px);
+    letter-spacing: 1px; color: #fff; text-shadow: 0 2px 0 var(--green-dark), 0 0 18px rgba(60,180,70,.35);
+  }
+  #hud {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    font-weight: 600; font-size: 15px;
+  }
+  #hud .stat span { color: #fff; font-weight: 800; font-size: 18px; margin-left: 4px; }
+  #effects { width: 100%; height: 28px; display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  #effects::-webkit-scrollbar { display: none; }
+  .effect {
+    display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 999px;
+    background: var(--panel); border: 1px solid rgba(255,255,255,.12); font-size: 13px; font-weight: 600;
+    position: relative; overflow: hidden; white-space: nowrap; flex-shrink: 0;
+  }
+  .effect.debuff { border-color: #e53935; background: #2a1212; }
+  .effect .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: currentColor; opacity: .8; }
+  #wrap { position: relative; width: min(100%, 624px, max(300px, calc(100vh - 190px))); max-width: 100%; aspect-ratio: 1; touch-action: none; }
+  canvas {
+    width: 100%; height: 100%; display: block; border-radius: 12px;
+    border: 3px solid #000; box-shadow: 0 0 0 3px var(--green), 0 12px 40px rgba(0,0,0,.6);
+  }
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(5,15,8,.82); border-radius: 12px; text-align: center; padding: 20px; overflow-y: auto;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 { margin: 0; font-family: 'UnifrakturCook', serif; font-size: clamp(30px, 7vw, 52px); }
+  #overlay p { margin: 0; color: var(--muted); max-width: 380px; line-height: 1.5; }
+  button {
+    font: 800 17px Inter, sans-serif; color: #fff; background: var(--green); border: 3px solid #000;
+    border-radius: 10px; padding: 10px 26px; cursor: pointer; box-shadow: 0 4px 0 #000;
+  }
+  button:hover { filter: brightness(1.15); }
+  button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
+  .hint { font-size: 13px; color: var(--muted); }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  button.small { font-size: 14px; padding: 8px 14px; box-shadow: 0 3px 0 #000; }
+
+  /* post-score form on the game-over screen */
+  #postForm { display: flex; flex-direction: column; gap: 6px; width: min(100%, 320px); }
+  #postForm label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); text-align: left; }
+  .post-row { display: flex; gap: 8px; }
+  #playerName {
+    flex: 1; min-width: 0; font: 600 16px Inter, sans-serif; color: var(--text); background: var(--bg);
+    border: 2px solid var(--line); border-radius: 8px; padding: 8px 10px; user-select: text; -webkit-user-select: text;
+  }
+  #postMsg { min-height: 1.2em; margin: 0; }
+
+  /* leaderboard */
+  .board {
+    flex: 0 1 300px; width: min(100%, 300px); background: var(--panel); border: 2px solid #000;
+    box-shadow: 0 0 0 2px var(--green); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .board h2 { margin: 0; font-family: 'UnifrakturCook', serif; font-size: 30px; color: #fff; text-wrap: balance; }
+  .board-sub { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+  #lbList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #lbList li {
+    display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px;
+    padding: 6px 8px; border-radius: 8px; font-size: 15px;
+  }
+  #lbList li:nth-child(odd) { background: rgba(255,255,255,.03); }
+  #lbList li.me { background: rgba(31,107,34,.35); outline: 1px solid var(--green); }
+  .rank {
+    width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; border: 2px solid #000;
+    background: var(--bg); color: var(--muted); font: 700 17px 'UnifrakturCook', serif;
+  }
+  li:nth-child(1) .rank { background: var(--red); color: #000; }
+  li:nth-child(2) .rank, li:nth-child(3) .rank { background: var(--green-dark); color: #fff; }
+  .lb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .lb-name small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .lb-score { font-weight: 800; font-variant-numeric: tabular-nums; }
+  kbd { background: var(--panel); border: 1px solid rgba(255,255,255,.2); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<main class="app">
+<section class="play">
+  <h1>Dawg Snake</h1>
+  <div id="hud">
+    <div class="stat">Score <span id="score">0</span></div>
+    <div class="stat">Length <span id="length">3</span></div>
+    <div class="stat">Best <span id="best">0</span></div>
+  </div>
+  <div id="effects"></div>
+  <div id="wrap">
+    <canvas id="game" width="624" height="624"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">Dawg Snake</h2>
+      <p id="ovText">Guide the green dawg and devour every red D. Don't hit the walls or your own tail.</p>
+      <form id="postForm" hidden>
+        <label for="playerName">Name for the leaderboard</label>
+        <div class="post-row">
+          <input id="playerName" maxlength="20" autocomplete="nickname" placeholder="Your name" required>
+          <button type="submit" class="small" id="postBtn">Post score</button>
+        </div>
+        <p id="postMsg" class="hint"></p>
+      </form>
+      <button id="ovBtn">Play</button>
+      <div class="hint"><kbd>←↑→↓</kbd> / <kbd>WASD</kbd> to move · <kbd>Space</kbd> to pause · <kbd>M</kbd> mute · swipe on mobile</div>
+    </div>
+  </div>
+</section>
+
+<aside class="board" aria-labelledby="lbTitle">
+  <h2 id="lbTitle">Leaderboard</h2>
+  <p class="board-sub" id="lbStatus">Loading scores…</p>
+  <ol id="lbList"></ol>
+</aside>
+</main>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   CONFIG
+   ===================================================================== */
+const CONFIG = {
+  cols: 24,
+  rows: 24,
+  cell: 26,               // pixels per cell (canvas = cols * cell)
+  startLength: 3,
+  baseTickMs: 120,        // ms per move at start
+  minTickMs: 60,          // fastest the base speed can get
+  speedUpEvery: 5,        // every N Ds eaten...
+  speedUpMs: 6,           // ...shave this many ms off the tick
+  pointsPerD: 10,
+  powerUpSpawnChance: 0.6,  // chance a power-up appears each time a D is eaten
+  powerUpEveryMs: 5000,     // also drop one on a timer, even if you're not eating
+  maxPowerUpsOnBoard: 2,
+};
+
+/* =====================================================================
+   POWER-UPS
+   ---------------------------------------------------------------------
+   To add a power-up, push an object into POWER_UPS. Every field except
+   id/name/color is optional.
+
+   {
+     id:        'unique-id',
+     name:      'Shown in HUD',
+     color:     '#hex',            // pickup glow + HUD chip color
+     type:      'buff',            // 'buff' | 'debuff' (debuffs get a red warning ring + HUD chip)
+     icon:      '⚡',               // emoji drawn on the board (or use draw())
+     draw(ctx, x, y, size, t){},   // optional custom board sprite
+     drawOverlay(ctx, game, effect){}, // draw on top of the whole board while active
+     drawHead(ctx, game, effect, size){ return true; }, // replace the dawg's head (ctx is head-local)
+     decorateHead(ctx, game, effect, size){},           // draw extras on the head (hats, shades...)
+     overlayLayer: 0,              // higher overlays draw on top of lower ones
+     weight:    1,                 // relative spawn likelihood
+     lifetime:  8000,              // ms it stays on the board before vanishing
+     duration:  5000,              // ms the effect lasts (0 = instant, one-shot)
+     enabled:   true,
+
+     // Passive modifiers while active (multiplied together if stacked):
+     modifiers: { speed: 1.5, score: 2 },  // speed>1 = faster
+
+     // Lifecycle hooks (all receive the game object). `effect` is the live
+     // effect record ({ def, remaining }) — stash per-run state on it.
+     onActivate(game, effect){},
+     onDeactivate(game, effect){},
+     onBeforeStep(game, effect){}, // right before each move (e.g. steer via game.dirQueue)
+     onTick(game, effect){},       // every snake move while active
+     onEat(game, item){},          // when the dawg eats a D while active
+
+     // Return true to cancel a death (walls wrap around, self passes through),
+     // or { x, y, dir } to send the dawg somewhere specific. kind = 'wall' | 'self'
+     onCollide(game, kind, head, effect){ return false; },
+   }
+
+   Handy game API for hooks: game.grow(n), game.shrink(n), game.addScore(n),
+   game.spawnFood(), game.freeCell(filter?), game.gameOver(reason?), game.snake, game.dir, game.items, game.effects,
+   game.isActive(id), game.particles(x, y, color, count), game.time,
+   game.headPx() (head center in canvas pixels), Sound.tone(...), Sound.noise(...).
+   ===================================================================== */
+const POWER_UPS = [
+  {
+    id: 'super-sharkey-speed',
+    name: 'Super Sharkey Speed',
+    color: '#1e90ff',
+    icon: '🦈',
+    weight: 1,
+    lifetime: 8000,
+    duration: 5000,
+    enabled: true,
+    modifiers: { speed: 1.6, score: 2 },
+
+    // Board sprite: a shark fin cruising through a little pool of water.
+    draw(ctx, x, y, size, t) {
+      const r = size * 0.48 * (1 + Math.sin(t / 150) * 0.08);
+      ctx.save();
+      ctx.shadowColor = '#1e90ff'; ctx.shadowBlur = 14;
+      ctx.fillStyle = '#1e90ff';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+      ctx.save();
+      ctx.beginPath(); ctx.arc(x, y, r - 1, 0, Math.PI * 2); ctx.clip();
+      // fin slides back and forth
+      const fx = x + Math.sin(t / 300) * size * 0.12, base = y + size * 0.12;
+      ctx.fillStyle = '#5f7380'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(fx - size * 0.24, base);
+      ctx.quadraticCurveTo(fx - size * 0.02, base - size * 0.2, fx + size * 0.1, base - size * 0.36);
+      ctx.quadraticCurveTo(fx + size * 0.06, base - size * 0.14, fx + size * 0.2, base);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      // wave line
+      ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = -0.5; i <= 0.5; i += 0.05) {
+        const wx = x + i * size, wy = base + Math.sin(i * 14 + t / 120) * size * 0.04;
+        i === -0.5 ? ctx.moveTo(wx, wy) : ctx.lineTo(wx, wy);
+      }
+      ctx.stroke();
+      ctx.restore();
+    },
+
+    onActivate(game) {
+      const h = game.snake[0];
+      game.particles(h.x, h.y, '#bfe6ff', 24); // big splash on pickup
+    },
+    // Leave a trail of sea spray behind the dawg while it's speeding.
+    onTick(game) {
+      const tail = game.snake[game.snake.length - 1];
+      game.particles(tail.x, tail.y, Math.random() < 0.5 ? '#7fd3ff' : '#ffffff', 3);
+    },
+  },
+
+  /* ---------------- DEBUFFS ---------------- */
+
+  // Lights out, Gotham style: only a small circle around the dawg stays lit.
+  {
+    id: 'darman-darkness',
+    name: 'Darman Darkness',
+    type: 'debuff',
+    color: '#f5c518',
+    icon: '🦇',
+    weight: 1,
+    lifetime: 8000,
+    duration: 6000,
+    overlayLayer: 0,
+
+    // Board sprite: the Bat-signal.
+    draw(ctx, x, y, size, t) {
+      const r = size * 0.48 * (1 + Math.sin(t / 150) * 0.06);
+      ctx.save();
+      ctx.shadowColor = '#f5c518'; ctx.shadowBlur = 16;
+      ctx.fillStyle = '#1a1a2e';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#f5c518';
+      ctx.beginPath(); ctx.ellipse(x, y, r * 0.82, r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#000';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#000';
+      Sprites.bat(ctx, x, y, size * 0.72, 1);
+    },
+
+    onActivate(game) {
+      const h = game.snake[0];
+      game.particles(h.x, h.y, '#1a1a2e', 26);
+      Sound.tone(110, 0.5, { type: 'sawtooth', vol: 0.12, slideTo: 55 }); // dun-dun
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const elapsed = fx.def.duration - fx.remaining;
+      const fade = Math.min(1, elapsed / 400, fx.remaining / 600);
+      const [hx, hy] = game.headPx();
+
+      // darkness with a flashlight hole around the dawg
+      const g = ctx.createRadialGradient(hx, hy, c * 1.2, hx, hy, c * 4);
+      g.addColorStop(0, 'rgba(5,5,15,0)');
+      g.addColorStop(1, `rgba(5,5,15,${0.95 * fade})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+
+      // Bat-signal shining in the night sky
+      ctx.save();
+      ctx.globalAlpha = 0.55 * fade;
+      const sx = W * 0.8, sy = H * 0.14;
+      const beam = ctx.createLinearGradient(W * 0.95, H, sx, sy);
+      beam.addColorStop(0, 'rgba(245,197,24,0)');
+      beam.addColorStop(1, 'rgba(245,197,24,0.35)');
+      ctx.fillStyle = beam;
+      ctx.beginPath(); ctx.moveTo(W * 0.93, H); ctx.lineTo(sx - c * 2.6, sy); ctx.lineTo(sx + c * 2.6, sy); ctx.lineTo(W * 0.97, H); ctx.fill();
+      ctx.fillStyle = '#f5c518';
+      ctx.beginPath(); ctx.ellipse(sx, sy, c * 2.6, c * 1.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#05050f';
+      Sprites.bat(ctx, sx, sy, c * 4.2, 1);
+      ctx.restore();
+
+      // bats flapping across the screen
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = '#000';
+      ctx.strokeStyle = 'rgba(150,130,255,.6)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) {
+        const x = ((game.time * (0.07 + i * 0.012) + i * 173) % (W + 120)) - 60;
+        const y = H * (0.15 + i * 0.14) + Math.sin(game.time / 260 + i * 2) * c;
+        Sprites.bat(ctx, x, y, c * 1.6, Math.sin(game.time / 70 + i));
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+  },
+
+  // A barrage of sportsballs flies over the board and blocks your view.
+  {
+    id: 'ians-sportsballs',
+    name: "Ian's Sportsballs",
+    type: 'debuff',
+    color: '#ff7a00',
+    icon: '🏀',
+    weight: 1,
+    lifetime: 8000,
+    duration: 6000,
+    overlayLayer: 1,
+    balls: ['⚽', '🏀', '🏈', '⚾', '🎾', '🏐', '🏉', '🥎'],
+
+    onActivate(game, fx) {
+      fx.flying = []; fx.nextSpawn = game.time; fx.lastT = game.time;
+      Sound.noise(0.15, 0.25); // whistle-ish thump
+      Sound.tone(1800, 0.35, { type: 'square', vol: 0.05 });
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const dt = game.state === 'playing' ? game.time - fx.lastT : 0;
+      fx.lastT = game.time;
+
+      if (game.state === 'playing' && fx.remaining > 900) {
+        while (fx.nextSpawn <= game.time) {
+          fx.nextSpawn += 110;
+          const side = Math.floor(Math.random() * 4), m = c * 2;
+          const start = [[-m, Math.random() * H], [W + m, Math.random() * H], [Math.random() * W, -m], [Math.random() * W, H + m]][side];
+          const target = [W * (0.2 + Math.random() * 0.6), H * (0.2 + Math.random() * 0.6)];
+          const ang = Math.atan2(target[1] - start[1], target[0] - start[0]);
+          const sp = 0.25 + Math.random() * 0.3;
+          fx.flying.push({
+            x: start[0], y: start[1], vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+            rot: Math.random() * 6, spin: (Math.random() - 0.5) * 0.02,
+            size: c * (1.3 + Math.random() * 1.7),
+            e: fx.def.balls[Math.floor(Math.random() * fx.def.balls.length)],
+          });
+        }
+      }
+
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const b of fx.flying) {
+        b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.spin * dt;
+        ctx.save();
+        ctx.translate(b.x, b.y); ctx.rotate(b.rot);
+        ctx.font = `${b.size}px serif`;
+        ctx.fillText(b.e, 0, 0);
+        ctx.restore();
+      }
+      ctx.restore();
+      const m = c * 4;
+      fx.flying = fx.flying.filter(b => b.x > -m && b.x < W + m && b.y > -m && b.y < H + m);
+    },
+  },
+
+  /* ---------------- BUFFS ---------------- */
+
+  // Smooth jazz slows the dawg down into a groove and triples your points.
+  {
+    id: 'emersons-jazz',
+    name: "Emerson's Jazz",
+    type: 'buff',
+    color: '#b05cff',
+    icon: '🎷',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 2,
+    modifiers: { speed: 0.75, score: 3 },
+    // ii–V–I walking bass line in C (MIDI notes), one note per beat
+    bass: [50, 53, 57, 60, 43, 47, 50, 53, 48, 52, 55, 57, 48, 47, 45, 43],
+    sax: [72, 75, 77, 78, 79, 82, 84], // C blues scale
+
+    onActivate(game, fx) {
+      fx.notes = []; fx.beat = 0; fx.lastT = game.time;
+      Sound.tone(Sound.midi(79), 0.18, { type: 'sawtooth', vol: 0.07, filter: 1800 });
+      Sound.tone(Sound.midi(84), 0.4, { type: 'sawtooth', vol: 0.07, filter: 1800, delay: 0.12 });
+    },
+
+    onTick(game, fx) {
+      const d = fx.def, b = fx.beat++;
+      if (b % 2 === 0) Sound.tone(Sound.midi(d.bass[(b / 2) % d.bass.length]), 0.3, { type: 'triangle', vol: 0.22 });
+      else Sound.noise(0.05, 0.05, 7000); // brushed hi-hat on the off-beat
+      if (Math.random() < 0.45) {
+        const n = d.sax[Math.floor(Math.random() * d.sax.length)];
+        Sound.tone(Sound.midi(n), 0.22, { type: 'sawtooth', vol: 0.06, filter: 1600, delay: b % 2 ? 0.05 : 0 });
+      }
+      const [hx, hy] = game.headPx();
+      fx.notes.push({ x: hx, y: hy, life: 1400, g: ['♪', '♫', '♬', '♩'][Math.floor(Math.random() * 4)], wob: Math.random() * 6 });
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const dt = game.state === 'playing' ? game.time - fx.lastT : 0;
+      fx.lastT = game.time;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+
+      // moody jazz-club vignette
+      const g = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+      g.addColorStop(0, 'rgba(60,0,90,0)');
+      g.addColorStop(1, `rgba(60,0,90,${0.45 * fade})`);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `bold ${c * 1.25}px serif`;
+      for (const n of fx.notes) {
+        n.life -= dt; n.y -= dt * 0.05;
+        ctx.globalAlpha = Math.max(0, n.life / 1400);
+        ctx.fillStyle = '#7b1fd1'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+        const x = n.x + Math.sin(n.y / 14 + n.wob) * c * 0.5;
+        ctx.strokeText(n.g, x, n.y); ctx.fillText(n.g, x, n.y);
+      }
+      ctx.restore();
+      fx.notes = fx.notes.filter(n => n.life > 0);
+    },
+  },
+
+  // Lacrosse stick scoops up any D within reach.
+  {
+    id: 'powers-lacrosse',
+    name: "Power's Lacrosse",
+    type: 'buff',
+    color: '#00c2a8',
+    icon: '🥍',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 2,
+    reach: 3, // cells
+
+    onActivate(game, fx) { fx.flights = []; },
+
+    onTick(game, fx) {
+      const h = game.snake[0], reach = fx.def.reach;
+      for (const item of game.items.filter(i => i.kind === 'food')) {
+        if (Math.max(Math.abs(item.x - h.x), Math.abs(item.y - h.y)) > reach) continue;
+        game.items.splice(game.items.indexOf(item), 1);
+        fx.flights.push({ x: item.x, y: item.y, t0: game.time });
+        game.eatD(item);
+        Sound.tone(660, 0.08, { type: 'square', vol: 0.06 });
+        Sound.tone(990, 0.12, { type: 'square', vol: 0.06, delay: 0.07 });
+      }
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const c = CONFIG.cell, [hx, hy] = game.headPx();
+      const fade = Math.min(1, fx.remaining / 600);
+      // reach zone: a lacrosse net mesh around the dawg
+      const r = (fx.def.reach + 0.5) * c;
+      ctx.save();
+      ctx.globalAlpha = 0.5 * fade;
+      ctx.strokeStyle = '#00c2a8'; ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]); ctx.lineDashOffset = -game.time / 30;
+      ctx.strokeRect(hx - r, hy - r, r * 2, r * 2);
+      ctx.restore();
+      // scooped Ds fly into the stick as a lacrosse ball
+      ctx.save();
+      for (const f of fx.flights) {
+        const p = Math.min(1, (game.time - f.t0) / 250);
+        const sx = f.x * c + c / 2, sy = f.y * c + c / 2;
+        const x = sx + (hx - sx) * p, y = sy + (hy - sy) * p - Math.sin(p * Math.PI) * c * 1.5;
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, c * 0.22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+      fx.flights = fx.flights.filter(f => game.time - f.t0 < 250);
+    },
+  },
+
+  // Club hockey: the board ices over and the dawg bounces off the boards like a puck.
+  {
+    id: 'clockey',
+    name: 'Clockey',
+    type: 'buff',
+    color: '#4fc3f7',
+    icon: '🏒',
+    weight: 1,
+    lifetime: 8000,
+    duration: 8000,
+    overlayLayer: 0,
+    modifiers: { speed: 1.15 },
+
+    onActivate(game, fx) {
+      // random skate scratches carved into the ice
+      fx.scratches = Array.from({ length: 14 }, () => ({
+        x: Math.random(), y: Math.random(), r: 0.05 + Math.random() * 0.15, a: Math.random() * 6, len: 0.6 + Math.random(),
+      }));
+      Sound.noise(0.3, 0.12, 3000); // skate swish
+    },
+
+    onCollide(game, kind) {
+      if (kind !== 'wall') return false;
+      const h = game.snake[0], d = game.dir;
+      const options = d.x ? [DIRS.up, DIRS.down] : [DIRS.left, DIRS.right];
+      const body = new Set(game.snake.map(s => s.x + ',' + s.y));
+      const free = (x, y) => x >= 0 && y >= 0 && x < CONFIG.cols && y < CONFIG.rows && !body.has(x + ',' + y);
+      // deflect toward whichever side has more open ice
+      const room = dir => { let n = 0, x = h.x, y = h.y; while (free(x += dir.x, y += dir.y)) n++; return n; };
+      const best = options.sort((a, b) => room(b) - room(a))[0];
+      if (!room(best)) return false;
+      game.dirQueue = [];
+      game.particles(h.x, h.y, '#e0f7ff', 14);
+      Sound.noise(0.08, 0.35, 1200); // puck off the boards
+      return { x: h.x + best.x, y: h.y + best.y, dir: best };
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = 'rgba(190,230,255,0.35)';
+      ctx.fillRect(0, 0, W, H);
+      // rink markings: center red line, blue lines, faceoff circle
+      ctx.globalAlpha = 0.35 * fade;
+      ctx.fillStyle = '#d32f2f'; ctx.fillRect(0, H / 2 - 3, W, 6);
+      ctx.fillStyle = '#1565c0'; ctx.fillRect(0, H * 0.3 - 3, W, 6); ctx.fillRect(0, H * 0.7 - 3, W, 6);
+      ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, W * 0.12, 0, Math.PI * 2); ctx.stroke();
+      // skate scratches
+      ctx.globalAlpha = 0.6 * fade;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      for (const s of fx.scratches) {
+        ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r * W, s.a, s.a + s.len); ctx.stroke();
+      }
+      // glowing boards to show the walls are safe
+      ctx.globalAlpha = (0.6 + Math.sin(game.time / 150) * 0.3) * fade;
+      ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, W - 6, H - 6);
+      ctx.restore();
+    },
+  },
+
+  // Blessed by Brother Dennis: a halo appears and the dawg can pass through its own body.
+  {
+    id: 'brother-dennis-priesthood',
+    name: "Brother Dennis' Priesthood",
+    type: 'buff',
+    color: '#ffd700',
+    icon: '⛪',
+    weight: 1,
+    lifetime: 8000,
+    duration: 8000,
+    overlayLayer: 2,
+    modifiers: { score: 1.5 },
+
+    onActivate(game) {
+      const h = game.snake[0];
+      game.particles(h.x, h.y, '#ffd700', 30);
+      // choir "aaah": a soft major chord
+      [60, 64, 67, 72].forEach((n, i) => Sound.tone(Sound.midi(n), 1.6, { type: 'sine', vol: 0.07, attack: 0.25, delay: i * 0.03 }));
+    },
+
+    onCollide(game, kind, head) {
+      if (kind !== 'self') return false;
+      game.particles(head.x, head.y, '#fff3b0', 6); // holy sparkle when ghosting through
+      return true;
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      const [hx, hy] = game.headPx();
+      ctx.save();
+      // heavenly light rays from above
+      ctx.globalAlpha = 0.18 * fade;
+      ctx.fillStyle = '#fff6c2';
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + (i - 2.5) * 0.28 + Math.sin(game.time / 1500) * 0.1;
+        ctx.beginPath(); ctx.moveTo(W / 2, -H * 0.2);
+        ctx.lineTo(W / 2 + Math.cos(a - 0.05) * -H * 1.6, -H * 0.2 + Math.sin(a - 0.05) * -H * 1.6);
+        ctx.lineTo(W / 2 + Math.cos(a + 0.05) * -H * 1.6, -H * 0.2 + Math.sin(a + 0.05) * -H * 1.6);
+        ctx.fill();
+      }
+      // golden aura around the dawg
+      ctx.globalAlpha = fade;
+      const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, c * 2.2);
+      g.addColorStop(0, 'rgba(255,215,0,0.35)'); g.addColorStop(1, 'rgba(255,215,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(hx - c * 3, hy - c * 3, c * 6, c * 6);
+      // halo floating over the head
+      const bob = Math.sin(game.time / 250) * c * 0.1;
+      ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 12;
+      ctx.strokeStyle = '#ffd700'; ctx.lineWidth = c * 0.16;
+      ctx.beginPath(); ctx.ellipse(hx, hy - c * 0.95 + bob, c * 0.55, c * 0.2, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    },
+  },
+
+  // Geometry Dash: the dawg becomes a flipping cube on a neon grid. Fast and
+  // worth big points — but spikes appear, and touching one ends the run.
+  {
+    id: 'cataldos-gd',
+    name: "Cataldo's GD",
+    type: 'buff',
+    color: '#00e5ff',
+    icon: '🟨',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 0,
+    modifiers: { speed: 1.3, score: 2.5 },
+    spikeCount: 8,
+
+    onActivate(game, fx) {
+      const h = game.snake[0];
+      fx.angle = 0; fx.shown = 0; fx.beat = 0; fx.pulse = game.time;
+      fx.spikes = [];
+      for (let i = 0; i < fx.def.spikeCount; i++) {
+        const c = game.freeCell(p => Math.abs(p.x - h.x) + Math.abs(p.y - h.y) > 5 &&
+          !fx.spikes.some(s => s.x === p.x && s.y === p.y));
+        if (c) fx.spikes.push(c);
+      }
+      Sound.tone(Sound.midi(72), 0.1, { type: 'square', vol: 0.06 });
+      Sound.tone(Sound.midi(79), 0.15, { type: 'square', vol: 0.06, delay: 0.08 });
+    },
+
+    onTick(game, fx) {
+      fx.angle += Math.PI / 2; // cube flips every move
+      fx.pulse = game.time;
+      const arp = [60, 64, 67, 72, 67, 64];
+      Sound.tone(150, 0.12, { type: 'sine', vol: 0.25, slideTo: 45 }); // kick
+      Sound.tone(Sound.midi(arp[fx.beat++ % arp.length] + 12), 0.08, { type: 'square', vol: 0.035 });
+      // a D never sits on a spike
+      fx.spikes = fx.spikes.filter(s => !game.items.some(i => i.x === s.x && i.y === s.y));
+      const h = game.snake[0];
+      if (fx.spikes.some(s => s.x === h.x && s.y === h.y)) {
+        game.particles(h.x, h.y, '#00e5ff', 30);
+        Sound.noise(0.3, 0.3);
+        game.gameOver('Spiked! Stereo Madness claims another dawg.');
+      }
+    },
+
+    drawHead(ctx, game, fx, size) {
+      fx.shown += (fx.angle - fx.shown) * 0.35; // smooth flip
+      const s = size * 0.62;
+      ctx.rotate(fx.shown);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = size * 0.06;
+      ctx.fillStyle = '#ffd400';
+      ctx.fillRect(-s / 2, -s / 2, s, s); ctx.strokeRect(-s / 2, -s / 2, s, s);
+      ctx.fillStyle = '#00e5ff';
+      ctx.fillRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.6); ctx.strokeRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.6);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-s * 0.2, -s * 0.15, s * 0.12, s * 0.12);
+      ctx.fillRect(s * 0.08, -s * 0.15, s * 0.12, s * 0.12);
+      ctx.fillRect(-s * 0.18, s * 0.08, s * 0.36, s * 0.07);
+      return true;
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      const beat = Math.max(0, 1 - (game.time - fx.pulse) / 200);
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = `rgba(0,90,255,${0.14 + beat * 0.1})`;
+      ctx.fillRect(0, 0, W, H);
+      // scrolling neon grid
+      ctx.strokeStyle = 'rgba(0,229,255,0.35)'; ctx.lineWidth = 1;
+      const off = (game.time / 8) % (c * 2);
+      ctx.beginPath();
+      for (let x = -off; x < W; x += c * 2) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+      for (let y = 0; y < H; y += c * 2) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+      ctx.stroke();
+      // spikes
+      ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 8 + beat * 8;
+      ctx.fillStyle = '#000'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      for (const s of fx.spikes) {
+        const x = s.x * c, y = s.y * c;
+        ctx.beginPath();
+        ctx.moveTo(x + 2, y + c - 2); ctx.lineTo(x + c / 2, y + 3); ctx.lineTo(x + c - 2, y + c - 2);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+    },
+  },
+
+  // Too cool to try: sunglasses drop on, and the dawg cruises to the Ds on autopilot.
+  {
+    id: 'christian-kool',
+    name: 'Christian Kool',
+    type: 'buff',
+    color: '#ff4fd8',
+    icon: '😎',
+    weight: 1,
+    lifetime: 8000,
+    duration: 6000,
+    overlayLayer: 2,
+    modifiers: { score: 2 },
+
+    onActivate(game, fx) {
+      fx.t0 = game.time;
+      Sound.tone(Sound.midi(72), 0.9, { type: 'sine', vol: 0.12, slideTo: Sound.midi(67) }); // smooth "yeahhh"
+      Sound.tone(Sound.midi(76), 0.9, { type: 'sine', vol: 0.08, slideTo: Sound.midi(71) });
+    },
+
+    // Autopilot: shortest path to the nearest D, or the most open space if there's no path.
+    onBeforeStep(game) {
+      const { cols, rows } = CONFIG, h = game.snake[0], key = (x, y) => x + ',' + y;
+      const blocked = new Set(game.snake.slice(0, -1).map(s => key(s.x, s.y)));
+      const ok = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && !blocked.has(key(x, y));
+      const all = Object.values(DIRS);
+      const dirs = all.filter(d => !(d.x === -game.dir.x && d.y === -game.dir.y));
+      const goals = new Set(game.items.filter(i => i.kind === 'food').map(i => key(i.x, i.y)));
+
+      const seen = new Set([key(h.x, h.y)]), q = [];
+      for (const d of dirs) {
+        const x = h.x + d.x, y = h.y + d.y;
+        if (ok(x, y)) { seen.add(key(x, y)); q.push([x, y, d]); }
+      }
+      let pick = null;
+      for (let i = 0; i < q.length && !pick; i++) {
+        const [x, y, first] = q[i];
+        if (goals.has(key(x, y))) { pick = first; break; }
+        for (const e of all) {
+          const nx = x + e.x, ny = y + e.y, k = key(nx, ny);
+          if (ok(nx, ny) && !seen.has(k)) { seen.add(k); q.push([nx, ny, first]); }
+        }
+      }
+      if (!pick) {
+        const room = d => {
+          const start = [h.x + d.x, h.y + d.y];
+          if (!ok(...start)) return -1;
+          const s = new Set([key(...start)]), st = [start];
+          while (st.length && s.size < 300) {
+            const [x, y] = st.pop();
+            for (const e of all) { const k = key(x + e.x, y + e.y); if (ok(x + e.x, y + e.y) && !s.has(k)) { s.add(k); st.push([x + e.x, y + e.y]); } }
+          }
+          return s.size;
+        };
+        pick = dirs.slice().sort((a, b) => room(b) - room(a))[0];
+      }
+      if (pick) game.dirQueue = [pick];
+    },
+
+    // "Deal with it" pixel shades sliding down onto the dawg's face.
+    decorateHead(ctx, game, fx, u) {
+      const drop = Math.min(1, (game.time - fx.t0) / 500);
+      const oy = (1 - drop) * -u * 1.5;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-0.2 * u, -0.11 * u + oy, 0.22 * u, 0.03 * u);  // strap
+      ctx.fillRect(0.0 * u, -0.13 * u + oy, 0.5 * u, 0.07 * u);    // top bar
+      ctx.fillRect(0.08 * u, -0.07 * u + oy, 0.15 * u, 0.1 * u);   // lenses
+      ctx.fillRect(0.3 * u, -0.07 * u + oy, 0.15 * u, 0.1 * u);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0.1 * u, -0.06 * u + oy, 0.04 * u, 0.03 * u);   // glints
+      ctx.fillRect(0.32 * u, -0.06 * u + oy, 0.04 * u, 0.03 * u);
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      // vaporwave chill tint
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, `rgba(255,79,216,${0.14 * fade})`);
+      g.addColorStop(1, `rgba(0,229,255,${0.14 * fade})`);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      const since = game.time - fx.t0;
+      if (since > 500 && since < 2400) {
+        ctx.globalAlpha = Math.min(1, (2400 - since) / 400);
+        ctx.font = `800 ${c * 1.6}px Inter, sans-serif`;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 7; ctx.fillStyle = '#fff';
+        ctx.strokeText('DEAL WITH IT', W / 2, H - c * 2); ctx.fillText('DEAL WITH IT', W / 2, H - c * 2);
+      }
+      ctx.globalAlpha = fade;
+      ctx.font = `700 ${c * 0.6}px Inter, sans-serif`;
+      ctx.fillStyle = '#ff4fd8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.strokeText('😎 cruise control', W / 2, c * 0.8); ctx.fillText('😎 cruise control', W / 2, c * 0.8);
+    },
+  },
+
+  // Strict curfew: after a short warning, the outer ring of the board is off-limits.
+  {
+    id: 'schmurdas-parietals',
+    name: "Schmurda's Parietals",
+    type: 'debuff',
+    color: '#c62828',
+    icon: '🚪',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 1,
+    depth: 3,      // cells of restricted zone along each wall
+    warnMs: 1500,  // grace period before the rule is enforced
+    inZone(x, y, d) { return x < d || y < d || x >= CONFIG.cols - d || y >= CONFIG.rows - d; },
+
+    onActivate(game, fx) {
+      const h = game.snake[0];
+      fx.t0 = game.time; fx.armed = false;
+      fx.wasInside = fx.def.inZone(h.x, h.y, fx.def.depth);
+      Sound.tone(2100, 0.25, { type: 'square', vol: 0.05 }); // RA's whistle
+      Sound.tone(2100, 0.45, { type: 'square', vol: 0.05, delay: 0.32 });
+    },
+
+    onTick(game, fx) {
+      const d = fx.def, h = game.snake[0], inside = d.inZone(h.x, h.y, d.depth);
+      if (!fx.armed && game.time - fx.t0 >= d.warnMs) fx.armed = true;
+      if (fx.armed) {
+        // Ds aren't allowed in the restricted zone either — send them back to the dorm
+        for (const it of game.items) {
+          if (it.kind !== 'food' || !d.inZone(it.x, it.y, d.depth)) continue;
+          const c = game.freeCell(p => !d.inZone(p.x, p.y, d.depth));
+          if (c) { it.x = c.x; it.y = c.y; }
+        }
+        // only entering the zone counts — if you were already in it, you get to walk out
+        if (inside && !fx.wasInside) {
+          game.particles(h.x, h.y, '#c62828', 24);
+          Sound.tone(220, 0.5, { type: 'square', vol: 0.1, slideTo: 110 });
+          game.gameOver('Written up for breaking parietals!');
+        }
+      }
+      fx.wasInside = inside;
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell, d = fx.def.depth * c;
+      const fade = Math.min(1, fx.remaining / 600);
+      const warning = !fx.armed;
+      const flash = warning ? (Math.floor(game.time / 150) % 2 ? 0.12 : 0.32) : 0.4;
+      ctx.globalAlpha = fade;
+      // restricted zone with hazard hatching
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(d, d, W - 2 * d, H - 2 * d); ctx.clip('evenodd');
+      ctx.fillStyle = `rgba(198,40,40,${flash})`; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 6;
+      ctx.beginPath();
+      for (let i = 0; i < W + H; i += 20) { ctx.moveTo(i, 0); ctx.lineTo(i - H, H); }
+      ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = fade;
+      ctx.strokeStyle = '#c62828'; ctx.lineWidth = 3; ctx.setLineDash([10, 6]);
+      ctx.strokeRect(d, d, W - 2 * d, H - 2 * d);
+      ctx.setLineDash([]);
+      // signage
+      const secs = Math.ceil((fx.def.warnMs - (game.time - fx.t0)) / 1000);
+      const text = warning ? `PARIETALS IN ${Math.max(1, secs)}…` : '🚫 PARIETALS IN EFFECT 🚫';
+      ctx.font = `800 ${c * 0.75}px Inter, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(text).width + c;
+      ctx.fillStyle = '#c62828'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, d / 2 - c * 0.6, tw, c * 1.2, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.fillText(text, W / 2, d / 2);
+      ctx.font = `700 ${c * 0.6}px Inter, sans-serif`;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+      ctx.strokeText('⏰ 2:00 AM — visitors out', W / 2, H - d / 2);
+      ctx.fillText('⏰ 2:00 AM — visitors out', W / 2, H - d / 2);
+    },
+  },
+
+  // Sharkey's pizza slices land on the board and Killa is out here eating them. Race him.
+  {
+    id: 'killas-dawgpizza',
+    name: "Killa's DawgPizza",
+    type: 'buff',
+    color: '#e8a33d',
+    icon: '🍕',
+    weight: 1,
+    lifetime: 8000,
+    duration: 8000,
+    overlayLayer: 1,
+    slicePoints: 15,
+
+    onActivate(game, fx) {
+      fx.slices = [];
+      for (let i = 0; i < 7; i++) {
+        const c = game.freeCell(p => !fx.slices.some(s => s.x === p.x && s.y === p.y));
+        if (c) fx.slices.push(c);
+      }
+      const left = Math.random() < 0.5;
+      fx.guy = { x: left ? 0 : CONFIG.cols - 1, y: Math.floor(Math.random() * CONFIG.rows) };
+      fx.drawX = fx.guy.x; fx.drawY = fx.guy.y; fx.facing = left ? 1 : -1;
+      fx.noms = []; fx.chew = -1e9; fx.step = 0;
+      Sound.tone(880, 0.15, { type: 'sine', vol: 0.1 }); // delivery doorbell
+      Sound.tone(660, 0.3, { type: 'sine', vol: 0.1, delay: 0.18 });
+    },
+
+    onTick(game, fx) {
+      const h = game.snake[0];
+      const mine = fx.slices.findIndex(s => s.x === h.x && s.y === h.y);
+      if (mine >= 0) {
+        fx.slices.splice(mine, 1);
+        game.addScore(fx.def.slicePoints); game.grow(1);
+        game.particles(h.x, h.y, '#e8a33d', 12);
+        Sound.tone(520, 0.08, { type: 'square', vol: 0.05 });
+      }
+      // Killa walks toward the closest slice, a little slower than the dawg
+      const g = fx.guy;
+      if (fx.step++ % 2 === 0 && fx.slices.length) {
+        const dist = s => Math.abs(s.x - g.x) + Math.abs(s.y - g.y);
+        const t = fx.slices.reduce((a, b) => (dist(a) <= dist(b) ? a : b));
+        if (Math.abs(t.x - g.x) > Math.abs(t.y - g.y)) { g.x += Math.sign(t.x - g.x); fx.facing = Math.sign(t.x - g.x); }
+        else g.y += Math.sign(t.y - g.y);
+        const his = fx.slices.findIndex(s => s.x === g.x && s.y === g.y);
+        if (his >= 0) {
+          fx.slices.splice(his, 1);
+          fx.chew = game.time;
+          fx.noms.push({ x: g.x, y: g.y, t: game.time });
+          Sound.noise(0.12, 0.2, 800); // chomp
+        }
+      }
+      // keep the pizza coming
+      if (fx.slices.length < 3 && fx.remaining > 1500) {
+        const c = game.freeCell(p => !fx.slices.some(s => s.x === p.x && s.y === p.y));
+        if (c) fx.slices.push(c);
+      }
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const c = CONFIG.cell;
+      const fade = Math.min(1, fx.remaining / 600);
+      ctx.globalAlpha = fade;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // slices
+      ctx.font = `${c * 0.95}px serif`;
+      for (const s of fx.slices) {
+        const bob = Math.sin(game.time / 200 + s.x + s.y) * 2;
+        ctx.fillText('🍕', s.x * c + c / 2, s.y * c + c / 2 + bob);
+      }
+      // Killa
+      fx.drawX += (fx.guy.x - fx.drawX) * 0.15;
+      fx.drawY += (fx.guy.y - fx.drawY) * 0.15;
+      const gx = fx.drawX * c + c / 2, gy = fx.drawY * c + c / 2;
+      const walk = Math.sin(game.time / 90) * 2;
+      ctx.font = `${c * 1.6}px serif`;
+      ctx.fillText('🧔', gx, gy + walk);
+      if (game.time - fx.chew < 700) {
+        ctx.font = `${c * 0.8}px serif`;
+        ctx.fillText('🍕', gx + fx.facing * c * 0.55, gy + c * 0.25 + Math.sin(game.time / 50) * 2);
+      }
+      // name tag
+      ctx.font = `800 ${c * 0.5}px Inter, sans-serif`;
+      const tw = ctx.measureText('KILLA').width + 10;
+      ctx.fillStyle = '#e8a33d'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(gx - tw / 2, gy - c * 1.45, tw, c * 0.6, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#000'; ctx.fillText('KILLA', gx, gy - c * 1.15);
+      // floating NOMs
+      ctx.font = `800 ${c * 0.7}px Inter, sans-serif`;
+      for (const n of fx.noms) {
+        const age = (game.time - n.t) / 900;
+        ctx.globalAlpha = Math.max(0, 1 - age) * fade;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 4; ctx.fillStyle = '#e8a33d';
+        const y = n.y * c - age * c * 1.5 - c;
+        ctx.strokeText('NOM', n.x * c + c / 2, y); ctx.fillText('NOM', n.x * c + c / 2, y);
+      }
+      fx.noms = fx.noms.filter(n => game.time - n.t < 900);
+    },
+  },
+
+  // Go Irish: the board becomes a football field. Run into the end zone for a touchdown.
+  {
+    id: 'notre-dame-football',
+    name: 'Notre Dame Football',
+    type: 'buff',
+    color: '#c99700',
+    icon: '☘️',
+    weight: 1,
+    lifetime: 8000,
+    duration: 10000,
+    overlayLayer: 0,
+    width: 3,            // end zone depth in cells
+    touchdownPoints: 60,
+    inEndZone(fx, x) { return fx.side === 'left' ? x < fx.def.width : x >= CONFIG.cols - fx.def.width; },
+    fanfare() {
+      [67, 72, 76, 79].forEach((n, i) =>
+        Sound.tone(Sound.midi(n), i === 3 ? 0.6 : 0.14, { type: 'square', vol: 0.06, filter: 2500, delay: i * 0.13 }));
+    },
+
+    onActivate(game, fx) {
+      fx.side = game.snake[0].x < CONFIG.cols / 2 ? 'right' : 'left'; // the far end zone
+      fx.tdAt = -1e9;
+      fx.def.fanfare();
+    },
+
+    onTick(game, fx) {
+      const h = game.snake[0];
+      if (!fx.def.inEndZone(fx, h.x)) return;
+      fx.tdAt = game.time;
+      game.addScore(fx.def.touchdownPoints);
+      for (let i = 0; i < 6; i++) {
+        game.particles(h.x + Math.round(Math.random() * 4 - 2), h.y + Math.round(Math.random() * 4 - 2),
+          i % 2 ? '#c99700' : '#0c2340', 10);
+      }
+      fx.def.fanfare();
+      fx.side = fx.side === 'left' ? 'right' : 'left';
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      ctx.globalAlpha = fade;
+      // turf + yard lines
+      ctx.fillStyle = 'rgba(46,125,50,0.22)'; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = c * 3; x <= W - c * 3; x += c * 2) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+      ctx.stroke();
+      // end zone
+      const ez = fx.def.width * c, ex = fx.side === 'left' ? 0 : W - ez;
+      ctx.fillStyle = 'rgba(12,35,64,0.8)'; ctx.fillRect(ex, 0, ez, H);
+      ctx.strokeStyle = '#c99700'; ctx.lineWidth = 3 + Math.sin(game.time / 150) * 2;
+      ctx.strokeRect(ex + 2, 2, ez - 4, H - 4);
+      ctx.save();
+      ctx.translate(ex + ez / 2, H / 2); ctx.rotate(fx.side === 'left' ? -Math.PI / 2 : Math.PI / 2);
+      ctx.font = `800 ${c * 1.2}px Inter, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#c99700';
+      ctx.fillText('NOTRE DAME', 0, 0);
+      ctx.restore();
+      // TOUCHDOWN banner
+      const since = game.time - fx.tdAt;
+      if (since < 1600) {
+        const pop = 1 + Math.max(0, 1 - since / 200) * 0.4;
+        ctx.globalAlpha = Math.min(1, (1600 - since) / 400);
+        ctx.save();
+        ctx.translate(W / 2, H / 2); ctx.scale(pop, pop);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+        ctx.font = `900 ${c * 2.3}px Inter, sans-serif`;
+        ctx.strokeStyle = '#0c2340'; ctx.lineWidth = 10; ctx.fillStyle = '#c99700';
+        ctx.strokeText('TOUCHDOWN!', 0, 0); ctx.fillText('TOUCHDOWN!', 0, 0);
+        ctx.font = `800 ${c * 0.8}px Inter, sans-serif`; ctx.lineWidth = 5; ctx.fillStyle = '#fff';
+        ctx.strokeText('Go Irish! ☘️', 0, c * 1.6); ctx.fillText('Go Irish! ☘️', 0, c * 1.6);
+        ctx.restore();
+      }
+    },
+  },
+
+  // Eagle-catching meme: an eagle keeps swooping in and snatching the D before you get there.
+  {
+    id: 'chase-and-bens-niche-references',
+    name: "Chase and Ben's Niche References",
+    type: 'debuff',
+    color: '#8d6e63',
+    icon: '🦅',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 3,
+    swoopMs: 800,
+    carryMs: 900,
+
+    screech() { Sound.tone(2400, 0.6, { type: 'sawtooth', vol: 0.04, slideTo: 900, filter: 3500 }); },
+
+    onActivate(game, fx) {
+      fx.clock = 0; fx.lastT = game.time;
+      fx.phase = 'wait'; fx.next = 400;
+      fx.def.screech();
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell, d = fx.def;
+      const playing = game.state === 'playing';
+      const dt = playing ? game.time - fx.lastT : 0;
+      fx.lastT = game.time; fx.clock += dt;
+
+      // eagle state machine: wait → swoop at the D → carry it off
+      if (playing) {
+        if (fx.phase === 'wait' && fx.clock >= fx.next && fx.remaining > 1200) {
+          const food = game.items.find(i => i.kind === 'food');
+          if (food) {
+            fx.target = food;
+            fx.from = [Math.random() < 0.5 ? -c * 2 : W + c * 2, -c * 2];
+            fx.t0 = fx.clock; fx.phase = 'swoop';
+            d.screech();
+          }
+        } else if (fx.phase === 'swoop' && fx.clock - fx.t0 >= d.swoopMs) {
+          fx.carrying = game.items.includes(fx.target); // did the dawg beat it there?
+          if (fx.carrying) { game.items.splice(game.items.indexOf(fx.target), 1); game.spawnFood(); }
+          fx.grab = [fx.target.x * c + c / 2, fx.target.y * c + c / 2];
+          fx.to = [fx.from[0] < 0 ? W + c * 3 : -c * 3, -c * 3];
+          fx.t0 = fx.clock; fx.phase = 'carry';
+        } else if (fx.phase === 'carry' && fx.clock - fx.t0 >= d.carryMs) {
+          fx.phase = 'wait'; fx.next = fx.clock + 900;
+        }
+      }
+
+      let pos = null, facing = 1;
+      if (fx.phase === 'swoop') {
+        const p = Math.min(1, (fx.clock - fx.t0) / d.swoopMs);
+        const tx = fx.target.x * c + c / 2, ty = fx.target.y * c + c / 2;
+        pos = [fx.from[0] + (tx - fx.from[0]) * p, fx.from[1] + (ty - fx.from[1]) * (1 - (1 - p) ** 2)];
+        facing = Math.sign(tx - fx.from[0]) || 1;
+      } else if (fx.phase === 'carry') {
+        const p = Math.min(1, (fx.clock - fx.t0) / d.carryMs);
+        pos = [fx.grab[0] + (fx.to[0] - fx.grab[0]) * p, fx.grab[1] + (fx.to[1] - fx.grab[1]) * p * p];
+        facing = Math.sign(fx.to[0] - fx.grab[0]) || 1;
+      }
+      const fade = Math.min(1, (d.duration - fx.remaining) / 300, fx.remaining / 600);
+      if (pos) {
+        if (fx.phase === 'carry' && fx.carrying) {
+          ctx.drawImage(Sprites.food, pos[0] - c * 0.45, pos[1] + c * 0.35, c * 0.9, c * 0.9);
+        }
+        ctx.save();
+        ctx.translate(pos[0], pos[1]);
+        if (facing > 0) ctx.scale(-1, 1); // the emoji faces left by default
+        ctx.font = `${c * 2.4}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🦅', 0, 0);
+        ctx.restore();
+      }
+
+      // meme captions
+      ctx.globalAlpha = 0.95 * fade;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      ctx.font = `${c * 1.35}px Impact, Anton, 'Arial Black', sans-serif`;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 6;
+      ctx.strokeText('WHEN THE EAGLE', W / 2, c * 1.1); ctx.fillText('WHEN THE EAGLE', W / 2, c * 1.1);
+      ctx.strokeText('CATCHES YOUR D', W / 2, H - c * 1.0); ctx.fillText('CATCHES YOUR D', W / 2, H - c * 1.0);
+    },
+  },
+];
+
+/* =====================================================================
+   SPRITES
+   ===================================================================== */
+const Sprites = {
+  food: null,
+
+  // Red tile with a black blackletter "D" (pre-rendered once).
+  buildFood(size) {
+    const c = document.createElement('canvas');
+    const s = size * 2; // 2x for crispness
+    c.width = c.height = s;
+    const g = c.getContext('2d');
+    g.fillStyle = '#8b0d0d';
+    g.beginPath(); g.roundRect(s * 0.04, s * 0.04, s * 0.92, s * 0.92, s * 0.14); g.fill();
+    g.strokeStyle = '#000'; g.lineWidth = s * 0.06; g.stroke();
+    g.fillStyle = '#000';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `700 ${s * 1.02}px 'UnifrakturCook', 'Old English Text MT', serif`;
+    g.fillText('D', s * 0.5, s * 0.6);
+    this.food = c;
+  },
+
+  // Scottie dawg head, facing right, in a unit box centered at 0,0.
+  dawgHead(ctx, size) {
+    const u = size;
+    const P = (pts) => { ctx.beginPath(); ctx.moveTo(pts[0][0]*u, pts[0][1]*u); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*u, pts[i][1]*u); ctx.closePath(); };
+
+    const head = [
+      [-0.55, 0.42], [-0.5, -0.05], [-0.42, -0.62], [-0.22, -0.2], [-0.08, -0.68],
+      [0.06, -0.18], [0.24, -0.16], [0.3, -0.24], [0.36, -0.12], [0.58, -0.08],
+      [0.62, 0.06], [0.52, 0.12], [0.55, 0.3], [0.46, 0.24], [0.44, 0.52],
+      [0.34, 0.34], [0.28, 0.56], [0.18, 0.34], [0.1, 0.5], [0.02, 0.3], [-0.2, 0.36],
+    ];
+    ctx.lineJoin = 'round';
+    P(head);
+    ctx.fillStyle = '#1f6b22'; ctx.fill();
+    ctx.lineWidth = u * 0.065; ctx.strokeStyle = '#000'; ctx.stroke();
+
+    // white fur highlights
+    ctx.fillStyle = '#fff';
+    P([[-0.36, -0.42], [-0.28, -0.24], [-0.36, -0.12]]); ctx.fill();
+    P([[-0.03, -0.46], [0.02, -0.22], [-0.06, -0.14]]); ctx.fill();
+    P([[-0.42, 0.05], [-0.22, -0.05], [-0.3, 0.3], [-0.45, 0.32]]); ctx.fill();
+    // beard streaks
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = u * 0.045; ctx.lineCap = 'round';
+    [[0.38, 0.12, 0.4, 0.42], [0.27, 0.1, 0.27, 0.46], [0.16, 0.12, 0.13, 0.38]].forEach(([a, b, c, d]) => {
+      ctx.beginPath(); ctx.moveTo(a*u, b*u); ctx.lineTo(c*u, d*u); ctx.stroke();
+    });
+    // bushy brow
+    ctx.fillStyle = '#fff';
+    P([[0.08, -0.12], [0.3, -0.2], [0.26, -0.06]]); ctx.fill();
+    // eye
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(0.2*u, -0.02*u, u*0.055, 0, Math.PI*2); ctx.fill();
+    // nose
+    ctx.beginPath(); ctx.ellipse(0.58*u, -0.01*u, u*0.07, u*0.06, 0, 0, Math.PI*2); ctx.fill();
+  },
+
+  // Bat silhouette centered at x,y, w wide. flap (-1..1) bends the wings. Fills with current fillStyle.
+  bat(ctx, x, y, w, flap = 1) {
+    const half = [[0, -0.1], [0.04, -0.2], [0.06, -0.1], [0.14, -0.12], [0.3, -0.22], [0.5, -0.05],
+      [0.4, 0.0], [0.33, 0.12], [0.22, 0.04], [0.13, 0.14], [0.05, 0.06], [0, 0.2]];
+    const pt = ([px, py]) => [x + px * w, y + (Math.abs(px) > 0.1 ? py * flap : py) * w];
+    ctx.beginPath();
+    half.forEach((p, i) => { const [a, b] = pt(p); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
+    for (let i = half.length - 1; i >= 0; i--) { const [a, b] = pt([-half[i][0], half[i][1]]); ctx.lineTo(a, b); }
+    ctx.closePath(); ctx.fill();
+  },
+};
+
+/* =====================================================================
+   SOUND  (tiny Web Audio synth — press M to mute)
+   ===================================================================== */
+const Sound = {
+  ctx: null,
+  muted: (() => { try { return localStorage.getItem('dawgSnakeMuted') === '1'; } catch { return false; } })(),
+  unlock() {
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+    } catch {}
+  },
+  toggleMute() {
+    this.muted = !this.muted;
+    try { localStorage.setItem('dawgSnakeMuted', this.muted ? '1' : '0'); } catch {}
+    return this.muted;
+  },
+  midi: n => 440 * Math.pow(2, (n - 69) / 12),
+  tone(freq, dur, { type = 'triangle', vol = 0.15, attack = 0.01, delay = 0, filter = 0, slideTo = 0 } = {}) {
+    if (this.muted || !this.ctx) return;
+    const a = this.ctx, t = a.currentTime + delay;
+    const osc = a.createOscillator(), gain = a.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let node = osc;
+    if (filter) { const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filter; osc.connect(f); node = f; }
+    node.connect(gain).connect(a.destination);
+    osc.start(t); osc.stop(t + dur + 0.05);
+  },
+  noise(dur, vol = 0.1, highpass = 0) {
+    if (this.muted || !this.ctx) return;
+    const a = this.ctx, t = a.currentTime;
+    const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = a.createBufferSource(), gain = a.createGain();
+    src.buffer = buf; gain.gain.value = vol;
+    let node = src;
+    if (highpass) { const f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = highpass; src.connect(f); node = f; }
+    node.connect(gain).connect(a.destination);
+    src.start(t);
+  },
+};
+
+/* =====================================================================
+   GAME
+   ===================================================================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = CONFIG.cols * CONFIG.cell;
+canvas.height = CONFIG.rows * CONFIG.cell;
+
+const DIRS = { up: {x:0,y:-1}, down: {x:0,y:1}, left: {x:-1,y:0}, right: {x:1,y:0} };
+
+function loadBest() { try { return +localStorage.getItem('dawgSnakeBest') || 0; } catch { return 0; } }
+function saveBest(v) { try { localStorage.setItem('dawgSnakeBest', v); } catch {} }
+
+const game = {
+  state: 'menu', // menu | playing | paused | over
+  snake: [], dir: DIRS.right, dirQueue: [],
+  items: [], effects: [], fx: [],
+  score: 0, eaten: 0, pendingGrowth: 0,
+  best: loadBest(),
+  baseTick: CONFIG.baseTickMs, acc: 0, last: 0, time: 0,
+
+  /* ---------- lifecycle ---------- */
+  reset() {
+    const cy = Math.floor(CONFIG.rows / 2), cx = Math.floor(CONFIG.cols / 3);
+    this.snake = [];
+    for (let i = 0; i < CONFIG.startLength; i++) this.snake.push({ x: cx - i, y: cy });
+    this.dir = DIRS.right; this.dirQueue = [];
+    this.items = []; this.fx = [];
+    this.effects.forEach(e => e.def.onDeactivate?.(this));
+    this.effects = [];
+    this.score = 0; this.eaten = 0; this.pendingGrowth = 0;
+    this.baseTick = CONFIG.baseTickMs; this.acc = 0;
+    this.nextPowerUpAt = this.time + CONFIG.powerUpEveryMs;
+    this.spawnFood();
+    updateHud();
+  },
+  start() { Sound.unlock(); this.reset(); this.state = 'playing'; hideOverlay(); Leaderboard.hidePost(); },
+  pause() {
+    if (this.state === 'playing') { this.state = 'paused'; Leaderboard.hidePost(); showOverlay('Paused', 'Take a breather.', 'Resume'); }
+    else if (this.state === 'paused') { this.state = 'playing'; hideOverlay(); }
+  },
+  gameOver(reason = '') {
+    if (this.state === 'over') return;
+    this.state = 'over';
+    const head = this.snake[0];
+    this.particles(head.x, head.y, '#1f6b22', 30);
+    if (this.score > this.best) { this.best = this.score; saveBest(this.best); }
+    updateHud();
+    Leaderboard.offerPost(this.score, this.eaten);
+    showOverlay('Game Over', `${reason ? reason + ' ' : ''}The dawg ate ${this.eaten} D${this.eaten === 1 ? '' : 's'} for ${this.score} points.`, 'Play Again');
+  },
+
+  /* ---------- modifiers ---------- */
+  modifier(key) {
+    return this.effects.reduce((m, e) => m * (e.def.modifiers?.[key] ?? 1), 1);
+  },
+  tickMs() { return this.baseTick / this.modifier('speed'); },
+  isActive(id) { return this.effects.some(e => e.def.id === id); },
+
+  /* ---------- helpers for power-ups ---------- */
+  grow(n = 1) { this.pendingGrowth += n; },
+  shrink(n = 1) { for (let i = 0; i < n && this.snake.length > 2; i++) this.snake.pop(); },
+  addScore(n) { this.score += Math.round(n * this.modifier('score')); updateHud(); },
+
+  freeCell(filter = () => true) {
+    const taken = new Set([...this.snake, ...this.items].map(p => p.x + ',' + p.y));
+    const free = [];
+    for (let y = 0; y < CONFIG.rows; y++) for (let x = 0; x < CONFIG.cols; x++)
+      if (!taken.has(x + ',' + y) && filter({ x, y })) free.push({ x, y });
+    return free.length ? free[Math.floor(Math.random() * free.length)] : null;
+  },
+  spawnFood() {
+    const c = this.freeCell();
+    if (c) this.items.push({ ...c, kind: 'food', born: this.time });
+  },
+  spawnPowerUp() {
+    const pool = POWER_UPS.filter(p => p.enabled !== false);
+    if (!pool.length) return;
+    if (this.items.filter(i => i.kind === 'power').length >= CONFIG.maxPowerUpsOnBoard) return;
+    const total = pool.reduce((s, p) => s + (p.weight ?? 1), 0);
+    let r = Math.random() * total, def = pool[0];
+    for (const p of pool) { r -= p.weight ?? 1; if (r <= 0) { def = p; break; } }
+    const c = this.freeCell();
+    if (c) this.items.push({ ...c, kind: 'power', def, born: this.time });
+  },
+  activate(def) {
+    if (!def.duration) { def.onActivate?.(this, null); return; }   // instant
+    const existing = this.effects.find(e => e.def.id === def.id);
+    if (existing) { existing.remaining = def.duration; return; } // refresh timer
+    const effect = { def, remaining: def.duration };
+    this.effects.push(effect);
+    def.onActivate?.(this, effect);
+  },
+  headPx() {
+    const h = this.snake[0], c = CONFIG.cell;
+    return [h.x * c + c / 2, h.y * c + c / 2];
+  },
+
+  /* ---------- input ---------- */
+  turn(name) {
+    if (this.state === 'menu' || this.state === 'over') return;
+    const d = DIRS[name];
+    const last = this.dirQueue.length ? this.dirQueue[this.dirQueue.length - 1] : this.dir;
+    if (d === last || (d.x === -last.x && d.y === -last.y)) return;
+    if (this.dirQueue.length < 3) this.dirQueue.push(d);
+  },
+
+  /* ---------- simulation ---------- */
+  step() {
+    this.effects.forEach(e => e.def.onBeforeStep?.(this, e));
+    if (this.dirQueue.length) this.dir = this.dirQueue.shift();
+    const head = this.snake[0];
+    let nx = head.x + this.dir.x, ny = head.y + this.dir.y;
+
+    // walls
+    if (nx < 0 || ny < 0 || nx >= CONFIG.cols || ny >= CONFIG.rows) {
+      const rescue = this.collide('wall', { x: nx, y: ny });
+      if (!rescue) return this.gameOver();
+      if (typeof rescue === 'object') { // power-up chose where the dawg goes (e.g. a bounce)
+        nx = rescue.x; ny = rescue.y;
+        if (rescue.dir) this.dir = rescue.dir;
+      } else {
+        nx = (nx + CONFIG.cols) % CONFIG.cols; ny = (ny + CONFIG.rows) % CONFIG.rows; // default rescue = wrap
+      }
+    }
+    // self (tail tip moves away this step unless growing)
+    const body = this.pendingGrowth > 0 ? this.snake : this.snake.slice(0, -1);
+    if (body.some(s => s.x === nx && s.y === ny) && !this.collide('self', { x: nx, y: ny })) return this.gameOver();
+
+    this.snake.unshift({ x: nx, y: ny });
+    if (this.pendingGrowth > 0) this.pendingGrowth--; else this.snake.pop();
+
+    // pickups
+    const idx = this.items.findIndex(i => i.x === nx && i.y === ny);
+    if (idx >= 0) {
+      const item = this.items.splice(idx, 1)[0];
+      if (item.kind === 'food') this.eatD(item);
+      else { this.activate(item.def); this.particles(nx, ny, item.def.color, 18); }
+    }
+
+    this.effects.forEach(e => e.def.onTick?.(this, e));
+    updateHud();
+  },
+  collide(kind, head) {
+    for (const e of this.effects) {
+      const r = e.def.onCollide?.(this, kind, head, e);
+      if (r) return r;
+    }
+    return false;
+  },
+  eatD(item) {
+    this.eaten++;
+    this.grow(1);
+    this.addScore(CONFIG.pointsPerD);
+    this.particles(item.x, item.y, '#c21414', 16);
+    if (this.eaten % CONFIG.speedUpEvery === 0)
+      this.baseTick = Math.max(CONFIG.minTickMs, this.baseTick - CONFIG.speedUpMs);
+    this.effects.forEach(e => e.def.onEat?.(this, item));
+    if (!this.items.some(i => i.kind === 'food')) this.spawnFood();
+    if (Math.random() < CONFIG.powerUpSpawnChance) this.spawnPowerUp();
+  },
+  update(dt) {
+    this.time += dt;
+    // particles keep animating on game over too
+    this.fx = this.fx.filter(p => (p.life -= dt) > 0);
+    this.fx.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 0.0006 * dt; });
+    if (this.state !== 'playing') return;
+
+    // effect timers
+    for (const e of this.effects) e.remaining -= dt;
+    this.effects.filter(e => e.remaining <= 0).forEach(e => e.def.onDeactivate?.(this));
+    this.effects = this.effects.filter(e => e.remaining > 0);
+    // power-ups vanish if ignored
+    this.items = this.items.filter(i => i.kind !== 'power' || this.time - i.born < (i.def.lifetime ?? 8000));
+    if (this.time >= this.nextPowerUpAt) {
+      this.spawnPowerUp();
+      this.nextPowerUpAt = this.time + CONFIG.powerUpEveryMs;
+    }
+
+    this.acc += dt;
+    let guard = 0;
+    while (this.acc >= this.tickMs() && this.state === 'playing' && guard++ < 5) {
+      this.acc -= this.tickMs();
+      this.step();
+    }
+    renderEffectsHud();
+  },
+  particles(gx, gy, color, count) {
+    const c = CONFIG.cell;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 0.05 + Math.random() * 0.18;
+      this.fx.push({ x: gx * c + c / 2, y: gy * c + c / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.08,
+        life: 400 + Math.random() * 400, max: 800, color, size: 2 + Math.random() * 4 });
+    }
+  },
+};
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+function draw() {
+  const { cols, rows, cell: c } = CONFIG;
+  // checkered turf
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    ctx.fillStyle = (x + y) % 2 ? '#e9efe6' : '#f6f9f4';
+    ctx.fillRect(x * c, y * c, c, c);
+  }
+
+  // items
+  for (const it of game.items) {
+    const cx = it.x * c + c / 2, cy = it.y * c + c / 2;
+    if (it.kind === 'food') {
+      const bob = 1 + Math.sin(game.time / 220 + it.x) * 0.05;
+      const s = c * 1.0 * bob;
+      ctx.drawImage(Sprites.food, cx - s / 2, cy - s / 2, s, s);
+    } else {
+      const def = it.def, age = game.time - it.born, life = def.lifetime ?? 8000;
+      if (life - age < 2000 && Math.floor(age / 120) % 2) continue; // blink before vanishing
+      if (def.type === 'debuff') { // pulsing red warning ring
+        ctx.save(); ctx.strokeStyle = '#e53935'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+        ctx.lineDashOffset = game.time / 40;
+        ctx.beginPath(); ctx.arc(cx, cy, c * (0.62 + Math.sin(game.time / 120) * 0.05), 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+      if (def.draw) { def.draw(ctx, cx, cy, c, game.time); continue; }
+      const pulse = 1 + Math.sin(game.time / 150) * 0.1;
+      ctx.save();
+      ctx.shadowColor = def.color; ctx.shadowBlur = 14;
+      ctx.fillStyle = def.color;
+      ctx.beginPath(); ctx.arc(cx, cy, c * 0.45 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+      ctx.font = `${c * 0.6}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(def.icon ?? '★', cx, cy + 1);
+    }
+  }
+
+  // snake body (tail → neck), drawn as a thick connected ribbon with outline
+  const s = game.snake;
+  const tint = game.effects.find(e => e.def.color)?.def.color;
+  const pts = s.map(p => [p.x * c + c / 2, p.y * c + c / 2]);
+  const ribbon = (width, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = s.length - 1; i >= 0; i--) {
+      // break the line where the snake wrapped around an edge
+      const prev = s[i + 1];
+      if (prev && (Math.abs(prev.x - s[i].x) > 1 || Math.abs(prev.y - s[i].y) > 1)) ctx.moveTo(...pts[i]);
+      else if (i === s.length - 1) ctx.moveTo(...pts[i]);
+      else ctx.lineTo(...pts[i]);
+    }
+    ctx.stroke();
+  };
+  if (tint) { ctx.save(); ctx.shadowColor = tint; ctx.shadowBlur = 16; ribbon(c * 0.86, tint); ctx.restore(); }
+  ribbon(c * 0.86, '#000');
+  ribbon(c * 0.66, '#1f6b22');
+  // fur stripe + scruff
+  ribbon(c * 0.16, '#2f8a33');
+  for (let i = 2; i < s.length; i += 3) {
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.beginPath(); ctx.arc(pts[i][0] - c * 0.12, pts[i][1] - c * 0.12, c * 0.08, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // head
+  if (s.length) {
+    const [hx, hy] = pts[0];
+    ctx.save();
+    ctx.translate(hx, hy);
+    const d = game.dir;
+    if (d === DIRS.left) ctx.scale(-1, 1);
+    else if (d === DIRS.up) ctx.rotate(-Math.PI / 2);
+    else if (d === DIRS.down) ctx.rotate(Math.PI / 2);
+    const size = c * 1.35;
+    const custom = game.effects.find(e => e.def.drawHead);
+    ctx.save();
+    if (!custom || !custom.def.drawHead(ctx, game, custom, size)) Sprites.dawgHead(ctx, size);
+    ctx.restore();
+    game.effects.forEach(e => { if (e.def.decorateHead) { ctx.save(); e.def.decorateHead(ctx, game, e, size); ctx.restore(); } });
+    ctx.restore();
+  }
+
+  // particles
+  for (const p of game.fx) {
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // power-up screen overlays (darkness, flying balls, ice...)
+  if (game.state !== 'over' && game.snake.length) {
+    [...game.effects]
+      .filter(e => e.def.drawOverlay)
+      .sort((a, b) => (a.def.overlayLayer ?? 0) - (b.def.overlayLayer ?? 0))
+      .forEach(e => { ctx.save(); e.def.drawOverlay(ctx, game, e); ctx.restore(); });
+  }
+}
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+function updateHud() {
+  $('score').textContent = game.score;
+  $('length').textContent = game.snake.length;
+  $('best').textContent = Math.max(game.best, game.score);
+}
+let lastEffectsKey = '';
+function renderEffectsHud() {
+  const key = game.effects.map(e => e.def.id).join();
+  const box = $('effects');
+  if (key !== lastEffectsKey) {
+    lastEffectsKey = key;
+    box.innerHTML = game.effects.map(e =>
+      `<div class="effect ${e.def.type === 'debuff' ? 'debuff' : ''}" data-id="${e.def.id}" style="color:${e.def.color}">${e.def.icon ?? '★'}
+        <span style="color:var(--text)">${e.def.name}</span><div class="bar"></div></div>`).join('');
+  }
+  for (const e of game.effects) {
+    const bar = box.querySelector(`[data-id="${e.def.id}"] .bar`);
+    if (bar) bar.style.width = (100 * e.remaining / e.def.duration) + '%';
+  }
+}
+function showOverlay(title, text, btn) {
+  $('ovTitle').textContent = title; $('ovText').textContent = text; $('ovBtn').textContent = btn;
+  $('overlay').classList.remove('hidden');
+}
+function hideOverlay() { $('overlay').classList.add('hidden'); }
+
+$('ovBtn').addEventListener('click', () => game.state === 'paused' ? game.pause() : game.start());
+
+const KEYS = {
+  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
+  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+};
+window.addEventListener('keydown', e => {
+  if (e.target.closest?.('input, textarea')) return; // typing a name
+  if (KEYS[e.code]) { e.preventDefault(); game.turn(KEYS[e.code]); return; }
+  if (e.code === 'KeyM') { Sound.unlock(); Sound.toggleMute(); return; }
+  if (e.code === 'Space' || e.code === 'Escape' || e.code === 'KeyP') {
+    e.preventDefault();
+    if (game.state === 'playing' || game.state === 'paused') game.pause();
+    else if (e.code === 'Space') game.start();
+  } else if (e.code === 'Enter' && game.state !== 'playing') {
+    game.state === 'paused' ? game.pause() : game.start();
+  }
+});
+
+// swipe controls
+let touch0 = null;
+$('wrap').addEventListener('touchstart', e => { touch0 = e.touches[0]; }, { passive: true });
+$('wrap').addEventListener('touchend', e => {
+  if (!touch0) return;
+  const t = e.changedTouches[0], dx = t.clientX - touch0.clientX, dy = t.clientY - touch0.clientY;
+  touch0 = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+  game.turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+});
+
+/* =====================================================================
+   LEADERBOARD
+   ---------------------------------------------------------------------
+   Lives in the published Artifact's shared database. Each player owns
+   one document, scores/<their id>, holding their best run. Everyone can
+   read the board; each player can only write their own row (see the
+   access rules declared at publish). Opened as a local file there is no
+   database, so the board explains that and the game plays as normal.
+   ===================================================================== */
+const Leaderboard = {
+  db: null, uid: null, canWrite: null,
+  rows: [], mine: null, pending: null, posted: false,
+  TOP: 15,
+
+  async init() {
+    if (!window.claude?.use) return this.status('The leaderboard isn’t connected on this copy of the game yet. Play away, scores just won’t be posted.');
+    const [db, user] = await Promise.all([claude.use('db'), claude.use('user')]);
+    if (!db) return this.status('Sign in to claude.ai to see the leaderboard.');
+    this.db = db;
+    this.uid = user ? await user.id() : null;
+    this.canWrite = user ? await user.can('data.write') : null;
+    this.status('Loading scores…');
+
+    db.collection('scores').orderBy('score', 'desc').limit(this.TOP).onSnapshot(
+      snap => { this.rows = snap.docs.map(d => ({ id: d.id, ...d.data() })); this.render(); },
+      () => this.status('The leaderboard is unavailable right now. Reload to try again.'),
+    );
+    if (this.uid) {
+      db.doc('scores/' + this.uid).onSnapshot(
+        snap => { this.mine = snap.exists ? snap.data() : null; this.render(); },
+        () => {},
+      );
+    }
+  },
+
+  status(text) { $('lbStatus').textContent = text; },
+
+  canPost() { return !!(this.db && this.uid && this.canWrite !== false); },
+
+  render() {
+    const list = $('lbList');
+    list.replaceChildren();
+    this.rows.forEach(r => {
+      const li = document.createElement('li');
+      if (r.id === this.uid) li.className = 'me';
+      const rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = list.children.length + 1;
+      const name = document.createElement('span'); name.className = 'lb-name';
+      name.textContent = String(r.name || 'Anonymous dawg');
+      if (r.id === this.uid) { const you = document.createElement('small'); you.textContent = '(you)'; name.append(you); }
+      const score = document.createElement('span'); score.className = 'lb-score';
+      score.textContent = Number(r.score) || 0;
+      li.append(rank, name, score);
+      list.append(li);
+    });
+
+    let text;
+    if (!this.rows.length) text = this.canPost()
+      ? 'No scores yet. Finish a game and post yours to take the top spot.'
+      : 'No scores yet.';
+    else if (this.mine && !this.rows.some(r => r.id === this.uid)) text = `Your best: ${this.mine.score}. Top ${this.TOP} shown.`;
+    else text = `Top ${this.TOP} dawgs, best run per player.`;
+    if (!this.canPost() && this.db) text += ' Posting scores needs edit access to this game.';
+    this.status(text);
+  },
+
+  // Called on game over: show the name box if this run can go on the board.
+  offerPost(score, eaten) {
+    this.pending = { score, eaten }; this.posted = false;
+    const form = $('postForm');
+    if (!this.canPost() || score <= 0) { form.hidden = true; return; }
+    form.hidden = false;
+    $('postBtn').disabled = false;
+    const best = this.mine?.score ?? 0;
+    $('postMsg').textContent = best >= score ? `Your best is ${best}. Posting updates your name only.` : '';
+    let saved = this.mine?.name || '';
+    try { saved = saved || localStorage.getItem('dawgSnakeName') || ''; } catch {}
+    $('playerName').value = saved;
+  },
+  hidePost() { $('postForm').hidden = true; },
+
+  async post(rawName) {
+    if (!this.canPost() || !this.pending || this.posted) return;
+    const name = rawName.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 20);
+    if (!name) { $('postMsg').textContent = 'Type a name first.'; return; }
+    try { localStorage.setItem('dawgSnakeName', name); } catch {}
+    const prev = this.mine, run = this.pending, better = !prev || run.score > (prev.score ?? 0);
+    const doc = better
+      ? { name, score: run.score, eaten: run.eaten, at: new Date().toISOString() }
+      : { ...prev, name };
+    $('postBtn').disabled = true;
+    $('postMsg').textContent = 'Posting…';
+    try {
+      await this.db.doc('scores/' + this.uid).set(doc);
+      this.posted = true;
+      $('postMsg').textContent = better ? `Posted ${run.score} as ${name}.` : `Name updated. Your best is still ${prev.score}.`;
+    } catch (err) {
+      $('postBtn').disabled = false;
+      if (err?.code === 'invalid_argument') {
+        this.canWrite = false; this.hidePost(); this.render();
+      } else {
+        $('postMsg').textContent = 'Couldn’t post your score. Try again in a moment.';
+      }
+    }
+  },
+};
+
+$('postForm').addEventListener('submit', e => {
+  e.preventDefault();
+  Leaderboard.post($('playerName').value);
+});
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+function loop(now) {
+  const dt = Math.min(100, now - (game.last || now));
+  game.last = now;
+  game.update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+(async () => {
+  try { await document.fonts.load(`700 40px 'UnifrakturCook'`); } catch {}
+  Sprites.buildFood(CONFIG.cell);
+  game.reset();
+  updateHud();
+  requestAnimationFrame(loop);
+})();
+Leaderboard.init();
+
+// Expose for console tinkering / future power-up dev
+window.game = game; window.POWER_UPS = POWER_UPS; window.CONFIG = CONFIG; window.Sound = Sound;
+</script>
+</body>
+</html>
