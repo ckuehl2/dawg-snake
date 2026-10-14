@@ -118,6 +118,14 @@
   }
   .skin[aria-pressed="true"] { outline: 3px solid var(--gold); outline-offset: 2px; }
   #achBtn { background: var(--panel); border-color: #000; }
+  a.button {
+    display: inline-block; font: 800 17px Inter, sans-serif; color: #fff; background: var(--green); border: 3px solid #000;
+    border-radius: 10px; padding: 10px 26px; cursor: pointer; box-shadow: 0 4px 0 #000; text-decoration: none;
+  }
+  a.button.small { font-size: 14px; padding: 8px 14px; box-shadow: 0 3px 0 #000; }
+  a.button:hover { filter: brightness(1.15); }
+  a.button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
+  a.button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
   #achBtn[aria-expanded="true"] { background: var(--green-dark); }
   .ach-panel {
     width: 100%; background: var(--panel); border: 2px solid #000; box-shadow: 0 0 0 2px var(--green);
@@ -189,6 +197,7 @@
   <div class="below">
     <div class="skins" id="skins" role="group" aria-label="Dawg color"><span>Dawg color</span></div>
     <button id="achBtn" class="small" aria-expanded="false" aria-controls="achPanel">🏆 Achievements <span id="achCount"></span></button>
+    <a id="ideaBtn" class="button small" href="https://docs.google.com/forms/d/e/1FAIpQLSfaMbh6KtODpOD2oJNG7DfBGQYKGzUVgcHJwx76Ppxrkx9Ylg/viewform" target="_blank" rel="noopener">💡 Suggest a power-up</a>
   </div>
   <section id="achPanel" class="ach-panel" hidden aria-labelledby="achTitle">
     <div class="ach-head">
