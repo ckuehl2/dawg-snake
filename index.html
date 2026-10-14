@@ -105,6 +105,45 @@
   .lb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .lb-name small { color: var(--muted); font-weight: 400; margin-left: 4px; }
   .lb-score { font-weight: 800; font-variant-numeric: tabular-nums; }
+  /* achievements */
+  .below { width: 100%; display: flex; justify-content: center; }
+  #achBtn { background: var(--panel); border-color: #000; }
+  #achBtn[aria-expanded="true"] { background: var(--green-dark); }
+  .ach-panel {
+    width: 100%; background: var(--panel); border: 2px solid #000; box-shadow: 0 0 0 2px var(--green);
+    border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .ach-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .ach-head h2 { margin: 0; font-family: 'UnifrakturCook', serif; font-size: 28px; color: #fff; }
+  .ach-head p { margin: 0; font-size: 13px; color: var(--muted); }
+  #achList { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  #achList li {
+    display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; padding: 8px 10px;
+    border-radius: 10px; background: var(--bg); border: 1px solid var(--line); min-width: 0;
+  }
+  #achList li.done { border-color: var(--gold); background: rgba(245,197,24,.08); }
+  #achList .ach-icon { font-size: 26px; text-align: center; }
+  #achList li:not(.done) .ach-icon { filter: grayscale(1); opacity: .45; }
+  #achList strong { display: block; font-size: 14px; color: #fff; }
+  #achList li:not(.done) strong { color: var(--muted); }
+  #achList span.ach-desc { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+  .ach-progress { height: 4px; background: rgba(255,255,255,.1); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+  .ach-progress i { display: block; height: 100%; background: var(--gold); }
+  button.link { background: none; border: none; box-shadow: none; color: var(--muted); font: 600 13px Inter, sans-serif; padding: 4px; text-decoration: underline; }
+  button.link:active { transform: none; }
+  #ovAch { color: var(--gold); font-weight: 600; max-width: 380px; margin: 0; line-height: 1.5; }
+  #toasts { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 5; pointer-events: none; width: max-content; max-width: calc(100% - 24px); }
+  .toast {
+    display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center;
+    background: #111; color: #fff; border: 2px solid var(--gold); border-radius: 12px; padding: 8px 14px 8px 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); animation: toast-in .35s ease-out, toast-out .4s ease-in 3.2s forwards;
+  }
+  .toast .ach-icon { font-size: 28px; }
+  .toast small { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); font-weight: 800; }
+  .toast strong { font-size: 15px; }
+  @keyframes toast-in { from { transform: translateY(-20px); opacity: 0; } }
+  @keyframes toast-out { to { transform: translateY(-20px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
   kbd { background: var(--panel); border: 1px solid rgba(255,255,255,.2); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
 </style>
 </head>
@@ -120,9 +159,11 @@
   <div id="effects"></div>
   <div id="wrap">
     <canvas id="game" width="624" height="624"></canvas>
+    <div id="toasts" aria-live="polite"></div>
     <div id="overlay">
       <h2 id="ovTitle">Dawg Snake</h2>
       <p id="ovText">Guide the green dawg and devour every red D. Don't hit the walls or your own tail.</p>
+      <p id="ovAch" hidden></p>
       <form id="postForm" hidden>
         <label for="playerName">Name for the leaderboard</label>
         <div class="post-row">
@@ -135,6 +176,16 @@
       <div class="hint"><kbd>←↑→↓</kbd> / <kbd>WASD</kbd> to move · <kbd>Space</kbd> to pause · <kbd>M</kbd> mute · swipe on mobile</div>
     </div>
   </div>
+  <div class="below">
+    <button id="achBtn" class="small" aria-expanded="false" aria-controls="achPanel">🏆 Achievements <span id="achCount"></span></button>
+  </div>
+  <section id="achPanel" class="ach-panel" hidden aria-labelledby="achTitle">
+    <div class="ach-head">
+      <h2 id="achTitle">Achievements</h2>
+      <p>Saved in this browser. <button id="achReset" class="link" type="button">Reset</button></p>
+    </div>
+    <ul id="achList"></ul>
+  </section>
 </section>
 
 <aside class="board" aria-labelledby="lbTitle">
@@ -254,6 +305,10 @@ const POWER_UPS = [
     onActivate(game) {
       const h = game.snake[0];
       game.particles(h.x, h.y, '#bfe6ff', 24); // big splash on pickup
+      Sound.noise(0.35, 0.18, 900); // splash
+      // something big is circling: dun-dun... dun-dun
+      [0, 0.3, 0.75, 0.95].forEach((d, i) =>
+        Sound.tone(Sound.midi(i % 2 ? 41 : 40), 0.22, { type: 'sawtooth', vol: 0.12, filter: 500, delay: d }));
     },
     // Leave a trail of sea spray behind the dawg while it's speeding.
     onTick(game) {
@@ -474,7 +529,12 @@ const POWER_UPS = [
     overlayLayer: 2,
     reach: 3, // cells
 
-    onActivate(game, fx) { fx.flights = []; },
+    onActivate(game, fx) {
+      fx.flights = [];
+      Sound.noise(0.05, 0.35, 2500); // stick clack
+      Sound.tone(Sound.midi(79), 0.12, { type: 'square', vol: 0.05, delay: 0.08 });
+      Sound.tone(Sound.midi(84), 0.2, { type: 'square', vol: 0.05, delay: 0.18 });
+    },
 
     onTick(game, fx) {
       const h = game.snake[0], reach = fx.def.reach;
@@ -482,7 +542,7 @@ const POWER_UPS = [
         if (Math.max(Math.abs(item.x - h.x), Math.abs(item.y - h.y)) > reach) continue;
         game.items.splice(game.items.indexOf(item), 1);
         fx.flights.push({ x: item.x, y: item.y, t0: game.time });
-        game.eatD(item);
+        game.eatD(item, 'lacrosse');
         Sound.tone(660, 0.08, { type: 'square', vol: 0.06 });
         Sound.tone(990, 0.12, { type: 'square', vol: 0.06, delay: 0.07 });
       }
@@ -547,6 +607,7 @@ const POWER_UPS = [
       game.dirQueue = [];
       game.particles(h.x, h.y, '#e0f7ff', 14);
       Sound.noise(0.08, 0.35, 1200); // puck off the boards
+      game.emit('bounce');
       return { x: h.x + best.x, y: h.y + best.y, dir: best };
     },
 
@@ -600,6 +661,8 @@ const POWER_UPS = [
     onCollide(game, kind, head) {
       if (kind !== 'self') return false;
       game.particles(head.x, head.y, '#fff3b0', 6); // holy sparkle when ghosting through
+      Sound.tone(Sound.midi(84), 0.3, { type: 'sine', vol: 0.05 });
+      game.emit('ghost');
       return true;
     },
 
@@ -672,6 +735,7 @@ const POWER_UPS = [
       if (fx.spikes.some(s => s.x === h.x && s.y === h.y)) {
         game.particles(h.x, h.y, '#00e5ff', 30);
         Sound.noise(0.3, 0.3);
+        game.emit('spiked');
         game.gameOver('Spiked! Stereo Madness claims another dawg.');
       }
     },
@@ -851,6 +915,7 @@ const POWER_UPS = [
         if (inside && !fx.wasInside) {
           game.particles(h.x, h.y, '#c62828', 24);
           Sound.tone(220, 0.5, { type: 'square', vol: 0.1, slideTo: 110 });
+          game.emit('writtenUp');
           game.gameOver('Written up for breaking parietals!');
         }
       }
@@ -924,6 +989,7 @@ const POWER_UPS = [
       const mine = fx.slices.findIndex(s => s.x === h.x && s.y === h.y);
       if (mine >= 0) {
         fx.slices.splice(mine, 1);
+        fx.mine = (fx.mine || 0) + 1;
         game.addScore(fx.def.slicePoints); game.grow(1);
         game.particles(h.x, h.y, '#e8a33d', 12);
         Sound.tone(520, 0.08, { type: 'square', vol: 0.05 });
@@ -938,6 +1004,7 @@ const POWER_UPS = [
         const his = fx.slices.findIndex(s => s.x === g.x && s.y === g.y);
         if (his >= 0) {
           fx.slices.splice(his, 1);
+          fx.his = (fx.his || 0) + 1;
           fx.chew = game.time;
           fx.noms.push({ x: g.x, y: g.y, t: game.time });
           Sound.noise(0.12, 0.2, 800); // chomp
@@ -948,6 +1015,10 @@ const POWER_UPS = [
         const c = game.freeCell(p => !fx.slices.some(s => s.x === p.x && s.y === p.y));
         if (c) fx.slices.push(c);
       }
+    },
+
+    onDeactivate(game, fx) {
+      if (fx && game.state === 'playing') game.emit('pizzaResult', { mine: fx.mine || 0, his: fx.his || 0 });
     },
 
     drawOverlay(ctx, game, fx) {
@@ -1022,6 +1093,7 @@ const POWER_UPS = [
       if (!fx.def.inEndZone(fx, h.x)) return;
       fx.tdAt = game.time;
       game.addScore(fx.def.touchdownPoints);
+      game.emit('touchdown');
       for (let i = 0; i < 6; i++) {
         game.particles(h.x + Math.round(Math.random() * 4 - 2), h.y + Math.round(Math.random() * 4 - 2),
           i % 2 ? '#c99700' : '#0c2340', 10);
@@ -1111,6 +1183,7 @@ const POWER_UPS = [
         } else if (fx.phase === 'swoop' && fx.clock - fx.t0 >= d.swoopMs) {
           fx.carrying = game.items.includes(fx.target); // did the dawg beat it there?
           if (fx.carrying) { game.items.splice(game.items.indexOf(fx.target), 1); game.spawnFood(); }
+          else game.emit('eagleMiss');
           fx.grab = [fx.target.x * c + c / 2, fx.target.y * c + c / 2];
           fx.to = [fx.from[0] < 0 ? W + c * 3 : -c * 3, -c * 3];
           fx.t0 = fx.clock; fx.phase = 'carry';
@@ -1358,7 +1431,8 @@ const POWER_UPS = [
       fx.fetches.push({ x: d.x, y: d.y, t: game.time });
       game.particles(d.x, d.y, '#a1887f', 10);
       fx.def.bark();
-      if (hit.kind === 'food') game.eatD(hit);
+      game.emit('fetch');
+      if (hit.kind === 'food') game.eatD(hit, 'simon');
       else game.activate(hit.def);
     },
 
@@ -1441,6 +1515,7 @@ const POWER_UPS = [
       fx.caption = fx.def.pick(fx.def.lines.eat); fx.captionAt = game.time;
       fx.def.say(fx.caption);
       fx.def.cheer();
+      game.emit('combo', { n: fx.combo });
     },
 
     onTick(game, fx) {
@@ -1448,7 +1523,7 @@ const POWER_UPS = [
     },
 
     onDeactivate(game, fx) {
-      if (fx && fx.combo) fx.def.say(`That's the segment! ${fx.combo} D${fx.combo === 1 ? '' : 's'} on the drive!`);
+      if (fx && fx.combo && game.state === 'playing') fx.def.say(`That's the segment! ${fx.combo} D${fx.combo === 1 ? '' : 's'} on the drive!`);
     },
 
     drawOverlay(ctx, game, fx) {
@@ -1540,6 +1615,7 @@ const POWER_UPS = [
       cut.forEach((s, i) => { if (i % 2 === 0) game.particles(s.x, s.y, '#8e1b3a', 3); });
       fx.tackleAt = game.time;
       Sound.noise(0.2, 0.4, 150); // thud
+      game.emit('tackle');
       return true;
     },
 
@@ -1588,6 +1664,7 @@ const POWER_UPS = [
           const h = game.snake[0];
           game.particles(h.x, h.y, '#8e1b3a', 16); game.particles(h.x, h.y, '#ffffff', 12);
           Sound.noise(0.8, 0.1, 400); d.whistle();
+          game.emit('try');
           d.placeBall(game, fx);
         }
       }
@@ -1862,13 +1939,14 @@ const game = {
     this.items = []; this.fx = [];
     this.effects.forEach(e => e.def.onDeactivate?.(this, e));
     this.effects = [];
-    this.score = 0; this.eaten = 0; this.pendingGrowth = 0;
+    this.score = 0; this.eaten = 0; this.pendingGrowth = 0; this.alive = 0;
     this.baseTick = CONFIG.baseTickMs; this.acc = 0;
     this.nextPowerUpAt = this.time + CONFIG.powerUpEveryMs;
     this.spawnFood();
     updateHud();
   },
-  start() { Sound.unlock(); this.reset(); this.state = 'playing'; hideOverlay(); Leaderboard.hidePost(); },
+  start() { Sound.unlock(); this.reset(); this.state = 'playing'; hideOverlay(); Leaderboard.hidePost(); Achievements.startRun(); },
+  emit(event, data = {}) { Achievements.emit(event, data); }, // achievement events (see ACHIEVEMENTS)
   pause() {
     if (this.state === 'playing') { this.state = 'paused'; Leaderboard.hidePost(); showOverlay('Paused', 'Take a breather.', 'Resume'); }
     else if (this.state === 'paused') { this.state = 'playing'; hideOverlay(); }
@@ -1880,8 +1958,12 @@ const game = {
     this.particles(head.x, head.y, '#1f6b22', 30);
     if (this.score > this.best) { this.best = this.score; saveBest(this.best); }
     updateHud();
+    [[60, 0], [56, 0.18], [51, 0.36]].forEach(([n, d]) =>
+      Sound.tone(Sound.midi(n), d ? 0.3 : 0.2, { type: 'square', vol: 0.06, filter: 1800, delay: d }));
+    this.emit('over', { reason });
     Leaderboard.offerPost(this.score, this.eaten);
     showOverlay('Game Over', `${reason ? reason + ' ' : ''}The dawg ate ${this.eaten} D${this.eaten === 1 ? '' : 's'} for ${this.score} points.`, 'Play Again');
+    Achievements.showRunSummary();
   },
 
   /* ---------- modifiers ---------- */
@@ -1915,15 +1997,20 @@ const game = {
     let r = Math.random() * total, def = pool[0];
     for (const p of pool) { r -= p.weight ?? 1; if (r <= 0) { def = p; break; } }
     const c = this.freeCell();
-    if (c) this.items.push({ ...c, kind: 'power', def, born: this.time });
+    if (!c) return;
+    this.items.push({ ...c, kind: 'power', def, born: this.time });
+    Sound.tone(660, 0.1, { type: 'sine', vol: 0.05, slideTo: 990 }); // pop
   },
   activate(def) {
-    if (!def.duration) { def.onActivate?.(this, null); return; }   // instant
     const existing = this.effects.find(e => e.def.id === def.id);
-    if (existing) { existing.remaining = def.duration; return; } // refresh timer
-    const effect = { def, remaining: def.duration };
-    this.effects.push(effect);
-    def.onActivate?.(this, effect);
+    if (!def.duration) def.onActivate?.(this, null);             // instant
+    else if (existing) existing.remaining = def.duration;         // refresh timer
+    else {
+      const effect = { def, remaining: def.duration };
+      this.effects.push(effect);
+      def.onActivate?.(this, effect);
+    }
+    this.emit('powerup', { def });
   },
   headPx() {
     const h = this.snake[0], c = CONFIG.cell;
@@ -1973,6 +2060,7 @@ const game = {
     }
 
     this.effects.forEach(e => e.def.onTick?.(this, e));
+    if (this.state === 'playing') this.emit('step');
     updateHud();
   },
   collide(kind, head) {
@@ -1982,8 +2070,11 @@ const game = {
     }
     return false;
   },
-  eatD(item) {
+  // `by` says who got it: 'dawg', or a helper like 'simon' or 'lacrosse'
+  eatD(item, by = 'dawg') {
     this.eaten++;
+    Sound.noise(0.07, 0.18, 1500); // chomp
+    Sound.tone(240, 0.08, { type: 'square', vol: 0.04, slideTo: 120 });
     this.grow(1);
     this.addScore(CONFIG.pointsPerD);
     this.particles(item.x, item.y, '#c21414', 16);
@@ -1992,6 +2083,7 @@ const game = {
     this.effects.forEach(e => e.def.onEat?.(this, e, item));
     if (!this.items.some(i => i.kind === 'food')) this.spawnFood();
     if (Math.random() < CONFIG.powerUpSpawnChance) this.spawnPowerUp();
+    this.emit('eat', { item, by });
   },
   update(dt) {
     this.time += dt;
@@ -1999,10 +2091,14 @@ const game = {
     this.fx = this.fx.filter(p => (p.life -= dt) > 0);
     this.fx.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 0.0006 * dt; });
     if (this.state !== 'playing') return;
+    this.alive += dt;
 
     // effect timers
     for (const e of this.effects) e.remaining -= dt;
-    this.effects.filter(e => e.remaining <= 0).forEach(e => e.def.onDeactivate?.(this, e));
+    this.effects.filter(e => e.remaining <= 0).forEach(e => {
+      e.def.onDeactivate?.(this, e);
+      Sound.tone(700, 0.25, { type: 'triangle', vol: 0.04, slideTo: 250 }); // effect wears off
+    });
     this.effects = this.effects.filter(e => e.remaining > 0);
     // power-ups vanish if ignored
     this.items = this.items.filter(i => i.kind !== 'power' || this.time - i.born < (i.def.lifetime ?? 8000));
@@ -2190,6 +2286,205 @@ $('wrap').addEventListener('touchend', e => {
   touch0 = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
   game.turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+});
+
+/* =====================================================================
+   ACHIEVEMENTS
+   ---------------------------------------------------------------------
+   Each achievement listens for game events and unlocks when its check
+   returns true. Events come from game.emit(): 'eat', 'powerup', 'step',
+   'over', plus power-up moments like 'touchdown', 'try', 'bounce'.
+   A check gets (game, stats, data): stats are lifetime totals kept in
+   this browser; data is whatever the event sent.
+
+   To add one, push an entry:
+     { id, icon, name, desc, on: { eventName: (game, stats, data) => bool } }
+   Optional: goal + stat to show a progress bar (stats[stat] / goal),
+   secret: true to hide the description until it's unlocked.
+   ===================================================================== */
+
+// Counts something within one activation of a power-up (resets next time it's picked up).
+function countDuring(game, powerUpId, key) {
+  const e = game.effects.find(e => e.def.id === powerUpId);
+  if (!e) return 0;
+  e.counts = e.counts || {};
+  return (e.counts[key] = (e.counts[key] || 0) + 1);
+}
+const byDawg = d => d.by === 'dawg';
+
+const ACHIEVEMENTS = [
+  // ---- the basics ----
+  { id: 'first-bite', icon: '🍽️', name: 'First Bite', desc: 'Eat your first D.', on: { eat: () => true } },
+  { id: 'double-digits', icon: '🔟', name: 'Double Digits', desc: 'Eat 10 Ds in one game.', on: { eat: g => g.eaten >= 10 } },
+  { id: 'big-dawg', icon: '🐕', name: 'Big Dawg', desc: 'Grow to a length of 30.', on: { step: g => g.snake.length >= 30 } },
+  { id: 'dawg-pound', icon: '💯', name: 'Dawg Pound', desc: 'Score 1,000 points in one game.', on: { step: g => g.score >= 1000 } },
+  { id: 'legend', icon: '👑', name: 'Legend of the Pound', desc: 'Score 5,000 points in one game.', on: { step: g => g.score >= 5000 } },
+  { id: 'survivor', icon: '⏱️', name: 'Survivor', desc: 'Stay alive for 2 minutes.', on: { step: g => g.alive >= 120000 } },
+  { id: 'speedrun', icon: '💀', name: 'Speedrun to Nowhere', desc: 'Lose within 5 seconds of starting.', on: { over: g => g.alive < 5000 } },
+  { id: 'regular', icon: '📅', name: 'Regular', desc: 'Play 25 games.', goal: 25, stat: 'games', on: { over: (g, s) => s.games >= 25 } },
+  { id: 'connoisseur', icon: '🍷', name: 'D Connoisseur', desc: 'Eat 500 Ds across all your games.', goal: 500, stat: 'ds', on: { eat: (g, s) => s.ds >= 500 } },
+  { id: 'collector', icon: '🃏', name: "Gotta Catch 'Em All", desc: 'Pick up every power-up at least once.', goal: POWER_UPS.length, stat: 'seenCount',
+    on: { powerup: (g, s) => s.seenCount >= POWER_UPS.length } },
+  { id: 'stacked', icon: '🥞', name: 'Stacked', desc: 'Have 4 power-ups active at once.', on: { powerup: g => g.effects.length >= 4 } },
+  { id: 'debuff-magnet', icon: '🧲', name: 'Debuff Magnet', desc: 'Have 2 debuffs active at once.',
+    on: { powerup: g => g.effects.filter(e => e.def.type === 'debuff').length >= 2 } },
+
+  // ---- power-up challenges ----
+  { id: 'fin-tastic', icon: '🦈', name: 'Fin-tastic', desc: 'Eat 5 Ds during one Super Sharkey Speed.',
+    on: { eat: g => countDuring(g, 'super-sharkey-speed', 'fin') >= 5 } },
+  { id: 'night-vision', icon: '🦇', name: 'Night Vision', desc: 'Eat a D in the dark during Darman Darkness.',
+    on: { eat: (g, s, d) => byDawg(d) && g.isActive('darman-darkness') } },
+  { id: 'nothing-but-net', icon: '🏀', name: 'Nothing But Net', desc: "Eat 2 Ds through one round of Ian's Sportsballs.",
+    on: { eat: (g, s, d) => byDawg(d) && countDuring(g, 'ians-sportsballs', 'net') >= 2 } },
+  { id: 'smooth-operator', icon: '🎷', name: 'Smooth Operator', desc: "Eat 3 Ds during one Emerson's Jazz.",
+    on: { eat: g => countDuring(g, 'emersons-jazz', 'smooth') >= 3 } },
+  { id: 'top-cheese', icon: '🥍', name: 'Top Cheese', desc: "Scoop 3 Ds in one Power's Lacrosse.",
+    on: { eat: (g, s, d) => d.by === 'lacrosse' && countDuring(g, 'powers-lacrosse', 'scoop') >= 3 } },
+  { id: 'puck-luck', icon: '🏒', name: 'Puck Luck', desc: 'Bounce off the boards 3 times in one Clockey.',
+    on: { bounce: g => countDuring(g, 'clockey', 'bounce') >= 3 } },
+  { id: 'blessed', icon: '⛪', name: 'Blessed', desc: "Pass through your own body during Brother Dennis' Priesthood.", on: { ghost: () => true } },
+  { id: 'stereo-madness', icon: '🟨', name: 'Stereo Madness', desc: "Get spiked in Cataldo's GD.", on: { spiked: () => true } },
+  { id: 'deal-with-it', icon: '😎', name: 'Deal With It', desc: "Let Christian Kool's autopilot eat 2 Ds.",
+    on: { eat: (g, s, d) => byDawg(d) && countDuring(g, 'christian-kool', 'kool') >= 2 } },
+  { id: 'written-up', icon: '🚪', name: 'Written Up', desc: "Break Schmurda's Parietals.", on: { writtenUp: () => true } },
+  { id: 'out-ate-killa', icon: '🍕', name: 'Out-Ate Killa', desc: "Eat more slices than Killa during one DawgPizza.",
+    on: { pizzaResult: (g, s, d) => d.mine > d.his } },
+  { id: 'six-points', icon: '☘️', name: 'Six Points', desc: 'Score a touchdown in Notre Dame Football.', on: { touchdown: () => true } },
+  { id: 'hat-trick', icon: '🏈', name: 'Hat Trick', desc: 'Score 3 touchdowns in one Notre Dame Football.',
+    on: { touchdown: g => countDuring(g, 'notre-dame-football', 'td') >= 3 } },
+  { id: 'eagle-eye', icon: '🦅', name: 'Eagle Eye', desc: 'Beat the eagle to the D.', on: { eagleMiss: () => true } },
+  { id: 'moral-victory', icon: '🧻', name: 'Moral Victory', desc: "Eat 3 Ds worth nothing during one 0-4 Special.",
+    on: { eat: g => countDuring(g, 'quinn-browns-0-4-special', 'zero') >= 3 } },
+  { id: 'yo-i-can-see', icon: '🗣️', name: 'Yo, I Can See', desc: "Eat a D during E Man's Yo Yo Yo.",
+    on: { eat: (g, s, d) => byDawg(d) && g.isActive('e-mans-yo-yo-yo') } },
+  { id: 'good-boy', icon: '🦴', name: "Who's a Good Boy", desc: 'Have Simon fetch 3 things in one walk.',
+    on: { fetch: g => countDuring(g, 'simon', 'fetch') >= 3 } },
+  { id: 'call-of-the-game', icon: '🎙️', name: 'Call of the Game', desc: "Hit a x5 combo in Bmato's Commentary.", on: { combo: (g, s, d) => d.n >= 5 } },
+  { id: 'try-hard', icon: '🏉', name: 'Try Hard', desc: 'Score a try with Don.', on: { try: () => true } },
+  { id: 'broken-tackle', icon: '💪', name: 'Broken Tackle', desc: 'Break a tackle through your own tail with Don.', on: { tackle: () => true } },
+  { id: 'shot-your-shot', icon: '🌹', name: 'Shot Your Shot', desc: "Catch a girl during Pat Burke's Rizz.",
+    on: { eat: (g, s, d) => byDawg(d) && g.isActive('pat-burkes-rizz') } },
+
+  // ---- secret ----
+  { id: 'cursed', icon: '🌚', name: 'Cursed', desc: 'Have Darman Darkness and E Man\u2019s Yo Yo Yo at the same time.', secret: true,
+    on: { powerup: g => g.isActive('darman-darkness') && g.isActive('e-mans-yo-yo-yo') } },
+  { id: 'full-circle', icon: '🔁', name: 'Full Circle', desc: 'Crash while Clockey has the walls covered for you.', secret: true,
+    on: { over: g => g.isActive('clockey') } },
+];
+
+const Achievements = {
+  KEY: 'dawgSnakeAchievements',
+  unlocked: {},                        // id -> unlock time
+  stats: { games: 0, ds: 0, seen: [] }, // lifetime totals
+  run: [],                             // unlocked during the current game
+
+  load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.KEY) || 'null');
+      if (saved) { this.unlocked = saved.unlocked || {}; this.stats = { ...this.stats, ...saved.stats }; }
+    } catch {}
+    this.render();
+  },
+  save() {
+    try { localStorage.setItem(this.KEY, JSON.stringify({ unlocked: this.unlocked, stats: this.stats })); } catch {}
+  },
+
+  startRun() { this.run = []; $('ovAch').hidden = true; },
+
+  emit(event, data) {
+    const s = this.stats;
+    if (event === 'eat') s.ds++;
+    if (event === 'over') s.games++;
+    if (event === 'powerup' && !s.seen.includes(data.def.id)) s.seen.push(data.def.id);
+    s.seenCount = s.seen.length;
+
+    for (const a of ACHIEVEMENTS) {
+      const check = a.on[event];
+      if (!check || this.unlocked[a.id]) continue;
+      if (check(game, s, data)) this.unlock(a);
+    }
+    if (event === 'over' || event === 'powerup' || s.ds % 10 === 0) this.save();
+  },
+
+  unlock(a) {
+    this.unlocked[a.id] = Date.now();
+    this.run.push(a);
+    this.save();
+    this.render();
+    this.toast(a);
+    [72, 76, 79, 84].forEach((n, i) => Sound.tone(Sound.midi(n), i === 3 ? 0.4 : 0.12, { type: 'triangle', vol: 0.07, delay: i * 0.08 }));
+  },
+
+  queue: [],
+  toast(a) {
+    if ($('toasts').children.length >= 2) { this.queue.push(a); return; } // two on screen at a time
+    const t = document.createElement('div');
+    t.className = 'toast';
+    const icon = document.createElement('span'); icon.className = 'ach-icon'; icon.textContent = a.icon;
+    const text = document.createElement('div');
+    const label = document.createElement('small'); label.textContent = 'Achievement unlocked';
+    const name = document.createElement('strong'); name.textContent = a.name;
+    text.append(label, name);
+    t.append(icon, text);
+    $('toasts').append(t);
+    setTimeout(() => { t.remove(); if (this.queue.length) this.toast(this.queue.shift()); }, 3700);
+  },
+
+  showRunSummary() {
+    const box = $('ovAch');
+    box.hidden = !this.run.length;
+    box.textContent = this.run.length ? `🏆 Unlocked: ${this.run.map(a => `${a.icon} ${a.name}`).join(', ')}` : '';
+  },
+
+  render() {
+    const done = ACHIEVEMENTS.filter(a => this.unlocked[a.id]).length;
+    $('achCount').textContent = `${done}/${ACHIEVEMENTS.length}`;
+    const list = $('achList');
+    list.replaceChildren();
+    // unlocked first, then the rest in list order
+    const sorted = [...ACHIEVEMENTS].sort((a, b) => !!this.unlocked[b.id] - !!this.unlocked[a.id]);
+    for (const a of sorted) {
+      const got = !!this.unlocked[a.id], hide = a.secret && !got;
+      const li = document.createElement('li');
+      if (got) li.className = 'done';
+      const icon = document.createElement('span'); icon.className = 'ach-icon'; icon.textContent = hide ? '❔' : a.icon;
+      const body = document.createElement('div'); body.style.minWidth = '0';
+      const name = document.createElement('strong'); name.textContent = hide ? 'Secret achievement' : a.name;
+      const desc = document.createElement('span'); desc.className = 'ach-desc'; desc.textContent = hide ? 'Keep playing to find it.' : a.desc;
+      body.append(name, desc);
+      if (a.goal && !got) {
+        const have = Math.min(a.goal, this.stats[a.stat] || 0);
+        desc.textContent += ` (${have}/${a.goal})`;
+        const bar = document.createElement('div'); bar.className = 'ach-progress';
+        const fill = document.createElement('i'); fill.style.width = (100 * have / a.goal) + '%';
+        bar.append(fill); body.append(bar);
+      }
+      li.append(icon, body);
+      list.append(li);
+    }
+  },
+};
+
+$('achBtn').addEventListener('click', e => {
+  const panel = $('achPanel'), open = panel.hidden;
+  panel.hidden = !open;
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+  e.currentTarget.blur(); // so Space keeps controlling the game
+  if (open) { Achievements.render(); panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+});
+
+let resetArmed = null;
+$('achReset').addEventListener('click', e => {
+  const btn = e.currentTarget;
+  if (!resetArmed) {
+    btn.textContent = 'Click again to erase all achievements';
+    resetArmed = setTimeout(() => { resetArmed = null; btn.textContent = 'Reset'; }, 3000);
+    return;
+  }
+  clearTimeout(resetArmed); resetArmed = null;
+  Achievements.unlocked = {}; Achievements.stats = { games: 0, ds: 0, seen: [] };
+  Achievements.save(); Achievements.render();
+  btn.textContent = 'Reset';
 });
 
 /* =====================================================================
@@ -2415,6 +2710,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 })();
 Leaderboard.init();
+Achievements.load();
 
 // Expose for console tinkering / future power-up dev
 window.game = game; window.POWER_UPS = POWER_UPS; window.CONFIG = CONFIG; window.Sound = Sound;
