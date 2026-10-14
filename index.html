@@ -21,6 +21,7 @@
     color-scheme: dark; /* the game commits to one dark look */
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; min-height: 100%; }
   body {
     background: radial-gradient(ellipse at top, #163a1f 0%, var(--bg) 60%) var(--bg);
@@ -159,8 +160,8 @@ const CONFIG = {
   speedUpEvery: 5,        // every N Ds eaten...
   speedUpMs: 6,           // ...shave this many ms off the tick
   pointsPerD: 10,
-  powerUpSpawnChance: 0.6,  // chance a power-up appears each time a D is eaten
-  powerUpEveryMs: 5000,     // also drop one on a timer, even if you're not eating
+  powerUpSpawnChance: 0.7,  // chance a power-up appears each time a D is eaten
+  powerUpEveryMs: 4000,     // also drop one on a timer, even if you're not eating
   maxPowerUpsOnBoard: 2,
 };
 
@@ -180,6 +181,7 @@ const CONFIG = {
      drawOverlay(ctx, game, effect){}, // draw on top of the whole board while active
      drawHead(ctx, game, effect, size){ return true; }, // replace the dawg's head (ctx is head-local)
      decorateHead(ctx, game, effect, size){},           // draw extras on the head (hats, shades...)
+     drawItem(ctx, game, effect, item, x, y, size){ return true; }, // restyle board items (return false to keep the default)
      overlayLayer: 0,              // higher overlays draw on top of lower ones
      weight:    1,                 // relative spawn likelihood
      lifetime:  8000,              // ms it stays on the board before vanishing
@@ -195,7 +197,7 @@ const CONFIG = {
      onDeactivate(game, effect){},
      onBeforeStep(game, effect){}, // right before each move (e.g. steer via game.dirQueue)
      onTick(game, effect){},       // every snake move while active
-     onEat(game, item){},          // when the dawg eats a D while active
+     onEat(game, effect, item){},  // when the dawg eats a D while active
 
      // Return true to cancel a death (walls wrap around, self passes through),
      // or { x, y, dir } to send the dawg somewhere specific. kind = 'wall' | 'self'
@@ -974,8 +976,9 @@ const POWER_UPS = [
       ctx.font = `800 ${c * 0.5}px Inter, sans-serif`;
       const tw = ctx.measureText('KILLA').width + 10;
       ctx.fillStyle = '#e8a33d'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(gx - tw / 2, gy - c * 1.45, tw, c * 0.6, 5); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#000'; ctx.fillText('KILLA', gx, gy - c * 1.15);
+      const tagY = gy < c * 1.5 ? gy + c * 0.85 : gy - c * 1.45; // flip below him along the top edge
+      ctx.beginPath(); ctx.roundRect(gx - tw / 2, tagY, tw, c * 0.6, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#000'; ctx.fillText('KILLA', gx, tagY + c * 0.3);
       // floating NOMs
       ctx.font = `800 ${c * 0.7}px Inter, sans-serif`;
       for (const n of fx.noms) {
@@ -1149,6 +1152,567 @@ const POWER_UPS = [
       ctx.strokeText('CATCHES YOUR D', W / 2, H - c * 1.0); ctx.fillText('CATCHES YOUR D', W / 2, H - c * 1.0);
     },
   },
+
+  // Winless season energy: the board gets TP'd, the dawg hides under a paper bag, and Ds are worth nothing.
+  {
+    id: 'quinn-browns-0-4-special',
+    name: "Quinn Brown's 0-4 Special",
+    type: 'debuff',
+    color: '#bdbdbd',
+    icon: '🧻',
+    weight: 1,
+    lifetime: 8000,
+    duration: 6000,
+    overlayLayer: 1,
+    modifiers: { score: 0 },
+
+    onActivate(game, fx) {
+      fx.t0 = game.time; fx.lastT = game.time;
+      fx.streamers = Array.from({ length: 7 }, (_, i) => ({
+        x: (i + 0.5) / 7 + (Math.random() - 0.5) * 0.08,
+        len: 0.35 + Math.random() * 0.5, phase: Math.random() * 6, w: 0.03 + Math.random() * 0.02,
+      }));
+      fx.rolls = []; fx.nextRoll = game.time;
+      // sad trombone: wah, wah, wah, waaaah
+      [[62, 0], [61, 0.45], [60, 0.9]].forEach(([n, d]) =>
+        Sound.tone(Sound.midi(n), 0.4, { type: 'sawtooth', vol: 0.07, filter: 1200, delay: d }));
+      Sound.tone(Sound.midi(59), 1.3, { type: 'sawtooth', vol: 0.07, filter: 1200, delay: 1.35, slideTo: Sound.midi(56) });
+    },
+
+    onEat(game, fx, item) {
+      fx.zeroAt = game.time; fx.zeroPos = [item.x, item.y];
+      Sound.tone(Sound.midi(50), 0.3, { type: 'sawtooth', vol: 0.05, filter: 900, slideTo: Sound.midi(47) }); // womp
+    },
+
+    // Paper bag over the dawg's head, eye holes and all.
+    decorateHead(ctx, game, fx, u) {
+      ctx.fillStyle = '#c8a165'; ctx.strokeStyle = '#6d4c2b'; ctx.lineWidth = u * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(-0.42 * u, 0.42 * u); ctx.lineTo(-0.38 * u, -0.5 * u);
+      ctx.lineTo(0.58 * u, -0.46 * u); ctx.lineTo(0.62 * u, 0.42 * u);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-0.38 * u, -0.36 * u); ctx.lineTo(0.58 * u, -0.33 * u); ctx.stroke(); // folded rim
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.ellipse(0.12 * u, -0.08 * u, u * 0.07, u * 0.09, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0.38 * u, -0.08 * u, u * 0.07, u * 0.09, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = u * 0.05; ctx.strokeStyle = '#000';
+      ctx.beginPath(); ctx.arc(0.25 * u, 0.28 * u, u * 0.13, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); // frown
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const playing = game.state === 'playing';
+      const dt = playing ? game.time - fx.lastT : 0;
+      fx.lastT = game.time;
+      const fade = Math.min(1, fx.remaining / 600);
+      const unroll = Math.min(1, (game.time - fx.t0) / 900);
+      ctx.globalAlpha = fade;
+
+      // the record, in giant faded numbers
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `900 ${c * 7}px Inter, sans-serif`;
+      ctx.fillStyle = 'rgba(0,0,0,0.1)';
+      ctx.fillText('0-4', W / 2, H / 2);
+
+      // toilet paper streamers hanging from the top
+      for (const s of fx.streamers) {
+        const len = s.len * H * unroll, w = s.w * W;
+        ctx.beginPath();
+        for (let y = 0; y <= len; y += 6) {
+          const x = s.x * W + Math.sin(y / 40 + s.phase + game.time / 500) * c * 0.6;
+          y ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#9e9e9e'; ctx.lineWidth = w + 3; ctx.stroke();
+        ctx.strokeStyle = '#fafafa'; ctx.lineWidth = w; ctx.stroke();
+        // perforations
+        ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = w; ctx.setLineDash([1.5, 16]); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // rolls tumbling across the board
+      if (playing && fx.remaining > 900 && game.time >= fx.nextRoll) {
+        fx.nextRoll = game.time + 700;
+        const left = Math.random() < 0.5;
+        fx.rolls.push({ x: left ? -c : W + c, y: H * (0.25 + Math.random() * 0.7), vx: (left ? 1 : -1) * (0.12 + Math.random() * 0.1), rot: 0 });
+      }
+      ctx.font = `${c * 1.4}px serif`;
+      ctx.fillStyle = '#000'; // emoji inherit the fill's transparency
+      for (const r of fx.rolls) {
+        r.x += r.vx * dt; r.rot += r.vx * dt / (c * 0.7);
+        ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot); ctx.fillText('🧻', 0, 0); ctx.restore();
+      }
+      fx.rolls = fx.rolls.filter(r => r.x > -c * 2 && r.x < W + c * 2);
+
+      // "+0" when a D gets eaten
+      if (game.time - (fx.zeroAt ?? -1e9) < 900) {
+        const age = (game.time - fx.zeroAt) / 900;
+        ctx.globalAlpha = (1 - age) * fade;
+        ctx.font = `900 ${c * 1.1}px Inter, sans-serif`;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 5; ctx.fillStyle = '#bdbdbd'; ctx.lineJoin = 'round';
+        const [zx, zy] = fx.zeroPos;
+        ctx.strokeText('+0', zx * c + c / 2, zy * c - age * c * 1.5); ctx.fillText('+0', zx * c + c / 2, zy * c - age * c * 1.5);
+      }
+
+      // record banner
+      ctx.globalAlpha = fade;
+      ctx.font = `800 ${c * 0.65}px Inter, sans-serif`;
+      const text = 'RECORD 0-4 · EVERY D WORTH 0';
+      const tw = ctx.measureText(text).width + c;
+      ctx.fillStyle = '#424242'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, H - c * 1.6, tw, c * 1.1, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.fillText(text, W / 2, H - c * 1.05);
+    },
+  },
+
+  // YO. YO YO. YOOO. The screen fills up with yo's.
+  {
+    id: 'e-mans-yo-yo-yo',
+    name: "E Man's Yo Yo Yo",
+    type: 'debuff',
+    color: '#ff3d00',
+    icon: '🗣️',
+    weight: 1,
+    lifetime: 8000,
+    duration: 6000,
+    overlayLayer: 1,
+    words: ['YO', 'YO', 'YO', 'YO!', 'YOOO', 'yo', 'YO YO YO', 'YOOOOO'],
+    colors: ['#ff3d00', '#ffea00', '#00e5ff', '#76ff03', '#ff4081', '#ffffff', '#d500f9'],
+
+    yo() { Sound.tone(430, 0.16, { type: 'sawtooth', vol: 0.06, filter: 1400, slideTo: 250 }); },
+
+    onActivate(game, fx) {
+      fx.yos = []; fx.next = game.time; fx.n = 0;
+      fx.def.yo();
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell, d = fx.def;
+      if (game.state === 'playing' && fx.remaining > 600) {
+        while (fx.next <= game.time) {
+          fx.next += 70;
+          fx.yos.push({
+            x: Math.random() * W, y: Math.random() * H, size: c * (0.8 + Math.random() * 2.6),
+            rot: (Math.random() - 0.5) * 0.8, born: game.time, life: 900 + Math.random() * 700,
+            color: d.colors[Math.floor(Math.random() * d.colors.length)],
+            text: d.words[Math.floor(Math.random() * d.words.length)],
+          });
+          if (fx.n++ % 4 === 0) d.yo();
+        }
+      }
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      for (const y of fx.yos) {
+        const age = game.time - y.born;
+        const pop = Math.min(1, age / 120);
+        ctx.globalAlpha = Math.max(0, 1 - Math.max(0, age - y.life * 0.6) / (y.life * 0.4));
+        ctx.save();
+        ctx.translate(y.x, y.y); ctx.rotate(y.rot); ctx.scale(0.6 + pop * 0.4, 0.6 + pop * 0.4);
+        ctx.font = `900 ${y.size}px Inter, sans-serif`;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = y.size * 0.14;
+        ctx.strokeText(y.text, 0, 0);
+        ctx.fillStyle = y.color; ctx.fillText(y.text, 0, 0);
+        ctx.restore();
+      }
+      fx.yos = fx.yos.filter(y => game.time - y.born < y.life);
+    },
+  },
+
+  // Simon the helper dog fetches Ds and good power-ups for you (he knows to skip the debuffs).
+  {
+    id: 'simon',
+    name: 'Simon',
+    type: 'buff',
+    color: '#a1887f',
+    icon: '🐕',
+    weight: 1,
+    lifetime: 8000,
+    duration: 8000,
+    overlayLayer: 2,
+
+    bark() {
+      Sound.noise(0.06, 0.25, 600);
+      Sound.tone(520, 0.09, { type: 'square', vol: 0.06, slideTo: 360 });
+    },
+
+    onActivate(game, fx) {
+      const side = Math.floor(Math.random() * 4), r = n => Math.floor(Math.random() * n);
+      const { cols, rows } = CONFIG;
+      fx.dog = [{ x: 0, y: r(rows) }, { x: cols - 1, y: r(rows) }, { x: r(cols), y: 0 }, { x: r(cols), y: rows - 1 }][side];
+      fx.drawX = fx.dog.x; fx.drawY = fx.dog.y; fx.facing = 1; fx.fetches = [];
+      fx.def.bark();
+    },
+
+    onTick(game, fx) {
+      const d = fx.dog;
+      const wanted = i => i.kind === 'food' || (i.kind === 'power' && i.def.type !== 'debuff' && i.def.id !== 'simon');
+      const targets = game.items.filter(wanted);
+      if (!targets.length) return;
+      const dist = t => Math.abs(t.x - d.x) + Math.abs(t.y - d.y);
+      const t = targets.reduce((a, b) => (dist(a) <= dist(b) ? a : b));
+      if (Math.abs(t.x - d.x) > Math.abs(t.y - d.y)) { d.x += Math.sign(t.x - d.x); fx.facing = Math.sign(t.x - d.x); }
+      else if (t.y !== d.y) d.y += Math.sign(t.y - d.y);
+
+      const hit = game.items.find(i => i.x === d.x && i.y === d.y && wanted(i));
+      if (!hit) return;
+      game.items.splice(game.items.indexOf(hit), 1);
+      fx.fetches.push({ x: d.x, y: d.y, t: game.time });
+      game.particles(d.x, d.y, '#a1887f', 10);
+      fx.def.bark();
+      if (hit.kind === 'food') game.eatD(hit);
+      else game.activate(hit.def);
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const c = CONFIG.cell;
+      const fade = Math.min(1, fx.remaining / 600);
+      fx.drawX += (fx.dog.x - fx.drawX) * 0.2;
+      fx.drawY += (fx.dog.y - fx.drawY) * 0.2;
+      const x = fx.drawX * c + c / 2, y = fx.drawY * c + c / 2;
+      const trot = Math.abs(Math.sin(game.time / 80)) * 3;
+      ctx.globalAlpha = fade;
+      ctx.save();
+      ctx.translate(x, y - trot);
+      if (fx.facing > 0) ctx.scale(-1, 1); // the emoji faces left by default
+      ctx.font = `${c * 1.5}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🐕', 0, 0);
+      ctx.restore();
+      // name tag
+      ctx.font = `800 ${c * 0.5}px Inter, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText('SIMON').width + 10;
+      ctx.fillStyle = '#a1887f'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      const tagY = y < c * 1.5 ? y + c * 0.75 : y - c * 1.35; // flip below him along the top edge
+      ctx.beginPath(); ctx.roundRect(x - tw / 2, tagY, tw, c * 0.6, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#000'; ctx.fillText('SIMON', x, tagY + c * 0.3);
+      // "GOOD BOY!" pops
+      ctx.font = `800 ${c * 0.7}px Inter, sans-serif`; ctx.lineJoin = 'round';
+      for (const f of fx.fetches) {
+        const age = (game.time - f.t) / 1000;
+        ctx.globalAlpha = Math.max(0, 1 - age) * fade;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 4; ctx.fillStyle = '#fff';
+        const fy = f.y * c - age * c * 1.5 - c * 0.6;
+        ctx.strokeText('GOOD BOY!', f.x * c + c / 2, fy); ctx.fillText('GOOD BOY!', f.x * c + c / 2, fy);
+      }
+      fx.fetches = fx.fetches.filter(f => game.time - f.t < 1000);
+    },
+  },
+
+  // Live from the dawg pound: play-by-play captions, spoken calls, and a growing combo bonus per D.
+  {
+    id: 'bmatos-commentary',
+    name: "Bmato's Commentary",
+    type: 'buff',
+    color: '#e53935',
+    icon: '🎙️',
+    weight: 1,
+    lifetime: 8000,
+    duration: 8000,
+    overlayLayer: 3,
+    comboPoints: 10, // bonus = comboPoints × combo count, on top of the D's normal points
+    lines: {
+      start: ['Welcome back folks, Bmato here on the call!', 'We are LIVE and this dawg is HUNGRY!', 'Ladies and gentlemen, buckle up!'],
+      eat: ['AND THE DAWG EATS THE D!', 'OH WHAT A GRAB!', 'HE IS ON FIRE!', 'YOU CANNOT TEACH THAT!', 'UNBELIEVABLE!',
+        'THAT DAWG HAS A FAMILY!', 'LOOK AT HIM GO!', 'ANOTHER ONE! ANOTHER ONE!', 'THE CROWD IS ON ITS FEET!'],
+      filler: ['The dawg surveys the field...', 'You can feel the tension in this building.', 'Looking for the next D here...',
+        'Great footwork from the dawg so far.', 'What a night for snake.'],
+    },
+    pick(list) { return list[Math.floor(Math.random() * list.length)]; },
+    say(text) {
+      if (Sound.muted || !window.speechSynthesis) return;
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 1.15; u.pitch = 0.9;
+        speechSynthesis.cancel(); speechSynthesis.speak(u);
+      } catch {}
+    },
+    cheer() { Sound.noise(0.9, 0.08, 400); },
+
+    onActivate(game, fx) {
+      fx.combo = 0; fx.popAt = -1e9;
+      fx.caption = fx.def.pick(fx.def.lines.start); fx.captionAt = game.time;
+      fx.def.say(fx.caption);
+      fx.def.cheer();
+    },
+
+    onEat(game, fx) {
+      fx.combo++;
+      fx.bonus = fx.def.comboPoints * fx.combo;
+      game.addScore(fx.bonus);
+      fx.popAt = game.time;
+      fx.caption = fx.def.pick(fx.def.lines.eat); fx.captionAt = game.time;
+      fx.def.say(fx.caption);
+      fx.def.cheer();
+    },
+
+    onTick(game, fx) {
+      if (game.time - fx.captionAt > 2600) { fx.caption = fx.def.pick(fx.def.lines.filler); fx.captionAt = game.time; }
+    },
+
+    onDeactivate(game, fx) {
+      if (fx && fx.combo) fx.def.say(`That's the segment! ${fx.combo} D${fx.combo === 1 ? '' : 's'} on the drive!`);
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 300, fx.remaining / 500);
+      ctx.globalAlpha = fade;
+      ctx.textBaseline = 'middle';
+
+      // lower third: LIVE tag + caption bar
+      const barH = c * 1.3, barY = H - barH - c * 0.4;
+      ctx.fillStyle = 'rgba(13,27,62,0.92)';
+      ctx.fillRect(c * 0.4, barY, W - c * 0.8, barH);
+      ctx.fillStyle = '#e53935';
+      ctx.fillRect(c * 0.4, barY, c * 2.8, barH);
+      ctx.fillStyle = '#fff';
+      ctx.font = `900 ${c * 0.6}px Inter, sans-serif`; ctx.textAlign = 'left';
+      if (Math.floor(game.time / 500) % 2) { ctx.beginPath(); ctx.arc(c * 0.9, barY + barH / 2, c * 0.15, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillText('LIVE', c * 1.2, barY + barH / 2);
+      ctx.font = `800 ${c * 0.58}px Inter, sans-serif`;
+      const reveal = Math.min(fx.caption.length, Math.floor((game.time - fx.captionAt) / 25)); // typewriter
+      ctx.save();
+      ctx.beginPath(); ctx.rect(c * 3.4, barY, W - c * 4, barH); ctx.clip();
+      ctx.fillText(fx.caption.slice(0, reveal), c * 3.5, barY + barH / 2);
+      ctx.restore();
+
+      // score bug, top-left
+      ctx.font = `800 ${c * 0.55}px Inter, sans-serif`;
+      const bug = `🎙️ BMATO · COMBO x${fx.combo}`;
+      const bw = ctx.measureText(bug).width + c * 0.8;
+      ctx.fillStyle = 'rgba(13,27,62,0.92)'; ctx.fillRect(c * 0.4, c * 0.4, bw, c * 0.95);
+      ctx.fillStyle = '#e53935'; ctx.fillRect(c * 0.4, c * 0.4 + c * 0.85, bw, c * 0.1);
+      ctx.fillStyle = '#fff'; ctx.fillText(bug, c * 0.8, c * 0.4 + c * 0.45);
+
+      // combo pop
+      const since = game.time - fx.popAt;
+      if (since < 1100) {
+        const pop = 1 + Math.max(0, 1 - since / 150) * 0.5;
+        ctx.globalAlpha = Math.min(1, (1100 - since) / 300) * fade;
+        ctx.save();
+        ctx.translate(W / 2, H * 0.3); ctx.scale(pop, pop);
+        ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+        ctx.font = `900 ${c * 1.5}px Inter, sans-serif`;
+        ctx.strokeStyle = '#0d1b3e'; ctx.lineWidth = 8; ctx.fillStyle = '#ffeb3b';
+        const t = `COMBO x${fx.combo}! +${fx.bonus}`;
+        ctx.strokeText(t, 0, 0); ctx.fillText(t, 0, 0);
+        ctx.restore();
+      }
+    },
+  },
+
+  // Rugby with Don: catch the bouncing ball for a try, and break tackles through your own tail.
+  {
+    id: 'don',
+    name: 'Don',
+    type: 'buff',
+    color: '#8e1b3a',
+    icon: '🏉',
+    weight: 1,
+    lifetime: 8000,
+    duration: 9000,
+    overlayLayer: 0,
+    tryPoints: 50,
+
+    whistle() {
+      Sound.tone(2300, 0.15, { type: 'square', vol: 0.04 });
+      Sound.tone(2300, 0.3, { type: 'square', vol: 0.04, delay: 0.2 });
+    },
+    placeBall(game, fx) {
+      const c = CONFIG.cell, W = CONFIG.cols * c, H = CONFIG.rows * c, [hx, hy] = game.headPx();
+      let x, y;
+      do { x = c * 2 + Math.random() * (W - c * 4); y = c * 2 + Math.random() * (H - c * 4); }
+      while (Math.hypot(x - hx, y - hy) < c * 6);
+      const a = Math.random() * Math.PI * 2, sp = 0.08 + Math.random() * 0.06;
+      fx.ball = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: 0 };
+    },
+
+    onActivate(game, fx) {
+      fx.tryAt = -1e9; fx.tackleAt = -1e9; fx.lastT = game.time;
+      fx.def.placeBall(game, fx);
+      fx.def.whistle();
+    },
+
+    // Tackle break: running into your own tail cuts the tail off there instead of ending the game.
+    onCollide(game, kind, head, fx) {
+      if (kind !== 'self') return false;
+      const idx = game.snake.findIndex(s => s.x === head.x && s.y === head.y);
+      if (idx < 1) return false;
+      const cut = game.snake.splice(idx);
+      cut.forEach((s, i) => { if (i % 2 === 0) game.particles(s.x, s.y, '#8e1b3a', 3); });
+      fx.tackleAt = game.time;
+      Sound.noise(0.2, 0.4, 150); // thud
+      return true;
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell, d = fx.def;
+      const playing = game.state === 'playing';
+      const dt = playing ? game.time - fx.lastT : 0;
+      fx.lastT = game.time;
+      const fade = Math.min(1, (d.duration - fx.remaining) / 400, fx.remaining / 600);
+      ctx.globalAlpha = fade;
+
+      // pitch: try lines, 22s, halfway, and H-shaped posts at each end
+      ctx.fillStyle = 'rgba(56,142,60,0.2)'; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      [c * 2, W - c * 2, W / 2].forEach(x => { ctx.moveTo(x, 0); ctx.lineTo(x, H); });
+      ctx.stroke();
+      ctx.setLineDash([10, 8]); ctx.lineWidth = 2;
+      ctx.beginPath();
+      [W * 0.27, W * 0.73].forEach(x => { ctx.moveTo(x, 0); ctx.lineTo(x, H); });
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+      [c * 2, W - c * 2].forEach(x => {
+        ctx.beginPath();
+        ctx.moveTo(x, H / 2 - c * 1.6); ctx.lineTo(x, H / 2 + c * 1.6); // crossbar seen from above
+        ctx.moveTo(x - c * 0.5, H / 2 - c * 1.6); ctx.lineTo(x + c * 0.5, H / 2 - c * 1.6);
+        ctx.moveTo(x - c * 0.5, H / 2 + c * 1.6); ctx.lineTo(x + c * 0.5, H / 2 + c * 1.6);
+        ctx.stroke();
+      });
+
+      // the ball bounces like a rugby ball: badly
+      const b = fx.ball;
+      if (playing) {
+        b.x += b.vx * dt; b.y += b.vy * dt; b.rot += dt * 0.012;
+        const m = c * 0.6;
+        if (b.x < m || b.x > W - m) { b.vx = -b.vx * (0.8 + Math.random() * 0.5); b.vy += (Math.random() - 0.5) * 0.12; b.x = Math.min(W - m, Math.max(m, b.x)); }
+        if (b.y < m || b.y > H - m) { b.vy = -b.vy * (0.8 + Math.random() * 0.5); b.vx += (Math.random() - 0.5) * 0.12; b.y = Math.min(H - m, Math.max(m, b.y)); }
+        if (Math.random() < 0.01) { const a = Math.random() * Math.PI * 2, sp = Math.hypot(b.vx, b.vy); b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; }
+        const sp = Math.hypot(b.vx, b.vy), clamp = Math.min(0.16, Math.max(0.07, sp));
+        b.vx *= clamp / sp; b.vy *= clamp / sp;
+        // try!
+        const [hx, hy] = game.headPx();
+        if (Math.hypot(b.x - hx, b.y - hy) < c * 0.9) {
+          fx.tryAt = game.time;
+          game.addScore(d.tryPoints);
+          const h = game.snake[0];
+          game.particles(h.x, h.y, '#8e1b3a', 16); game.particles(h.x, h.y, '#ffffff', 12);
+          Sound.noise(0.8, 0.1, 400); d.whistle();
+          d.placeBall(game, fx);
+        }
+      }
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.beginPath(); ctx.ellipse(fx.ball.x + 3, fx.ball.y + c * 0.45, c * 0.45, c * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save();
+      ctx.translate(fx.ball.x, fx.ball.y); ctx.rotate(fx.ball.rot);
+      ctx.font = `${c * 1.2}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#000'; // emoji inherit the fill's transparency
+      ctx.fillText('🏉', 0, 0);
+      ctx.restore();
+
+      // banners
+      const banner = (text, at, color) => {
+        const since = game.time - at;
+        if (since >= 1300) return;
+        const pop = 1 + Math.max(0, 1 - since / 180) * 0.4;
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, (1300 - since) / 350) * fade;
+        ctx.translate(W / 2, H * 0.42); ctx.scale(pop, pop);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+        ctx.font = `900 ${c * 1.9}px Inter, sans-serif`;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 9; ctx.fillStyle = color;
+        ctx.strokeText(text, 0, 0); ctx.fillText(text, 0, 0);
+        ctx.restore();
+      };
+      banner(`TRY! +${d.tryPoints}`, fx.tryAt, '#ffffff');
+      banner('TACKLE BREAK!', fx.tackleAt, '#ffcdd2');
+    },
+  },
+
+  // Zero rizz: every D turns into a girl who runs away when the dawg gets close.
+  {
+    id: 'pat-burkes-rizz',
+    name: "Pat Burke's Rizz",
+    type: 'debuff',
+    color: '#ff4081',
+    icon: '🌹',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 2,
+    fleeRange: 5, // cells: closer than this and she starts running
+    girls: ['💃', '👩', '👱‍♀️', '👩‍🦰', '👸'],
+    lines: ['ew', 'who’s this?', 'no thanks', 'bye!', '😬', 'not you', 'run!!', '🙅‍♀️'],
+
+    onActivate(game, fx) {
+      fx.who = new WeakMap(); fx.step = 0; fx.bubbles = [];
+      // a smooth little pickup line... that falls flat
+      Sound.tone(Sound.midi(76), 0.25, { type: 'sine', vol: 0.08 });
+      Sound.tone(Sound.midi(79), 0.25, { type: 'sine', vol: 0.08, delay: 0.2 });
+      Sound.tone(Sound.midi(70), 0.5, { type: 'sine', vol: 0.08, delay: 0.45, slideTo: Sound.midi(62) });
+    },
+
+    onTick(game, fx) {
+      if (fx.step++ % 2) return; // she runs a step for every two of the dawg's, so you can corner her
+      const h = game.snake[0], { cols, rows } = CONFIG, d = fx.def;
+      const taken = new Set([...game.snake, ...game.items].map(p => p.x + ',' + p.y));
+      for (const it of game.items) {
+        if (it.kind !== 'food') continue;
+        const dist = (x, y) => Math.abs(x - h.x) + Math.abs(y - h.y);
+        if (dist(it.x, it.y) > d.fleeRange) continue;
+        let best = null, bestD = dist(it.x, it.y);
+        for (const m of Object.values(DIRS)) {
+          const x = it.x + m.x, y = it.y + m.y;
+          if (x < 0 || y < 0 || x >= cols || y >= rows || taken.has(x + ',' + y)) continue;
+          if (dist(x, y) > bestD) { best = { x, y }; bestD = dist(x, y); }
+        }
+        if (!best) continue; // cornered!
+        taken.delete(it.x + ',' + it.y); taken.add(best.x + ',' + best.y);
+        it.x = best.x; it.y = best.y;
+        if (Math.random() < 0.35) fx.bubbles.push({ item: it, text: d.lines[Math.floor(Math.random() * d.lines.length)], t: game.time });
+      }
+    },
+
+    onEat(game) { Sound.tone(Sound.midi(84), 0.15, { type: 'sine', vol: 0.07 }); }, // she said yes?!
+
+    // Ds are drawn as girls while this is active.
+    drawItem(ctx, game, fx, it, cx, cy, size) {
+      if (it.kind !== 'food') return false;
+      if (!fx.who.has(it)) fx.who.set(it, fx.def.girls[Math.floor(Math.random() * fx.def.girls.length)]);
+      const run = Math.abs(Math.sin(game.time / 90 + it.x)) * 3;
+      ctx.save();
+      ctx.shadowColor = '#ff4081'; ctx.shadowBlur = 10;
+      ctx.font = `${size * 1.15}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(fx.who.get(it), cx, cy - run);
+      ctx.restore();
+      return true;
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      // rosy tint
+      ctx.globalAlpha = fade;
+      const g = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+      g.addColorStop(0, 'rgba(255,64,129,0)'); g.addColorStop(1, 'rgba(255,64,129,0.22)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      // a rose in the dawg's mouth
+      const [hx, hy] = game.headPx();
+      ctx.font = `${c * 0.8}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🌹', hx + game.dir.x * c * 0.7, hy + game.dir.y * c * 0.7 + c * 0.2);
+      // speech bubbles from the fleeing girls
+      ctx.font = `700 ${c * 0.55}px Inter, sans-serif`;
+      for (const b of fx.bubbles) {
+        const age = (game.time - b.t) / 1100;
+        if (!game.items.includes(b.item)) continue;
+        ctx.globalAlpha = Math.max(0, 1 - age) * fade;
+        const x = b.item.x * c + c / 2, y = b.item.y * c - c * 0.6;
+        const tw = ctx.measureText(b.text).width + 12;
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = '#ff4081'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(x - tw / 2, y - c * 0.38, tw, c * 0.76, 8); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#c2185b'; ctx.fillText(b.text, x, y);
+      }
+      fx.bubbles = fx.bubbles.filter(b => game.time - b.t < 1100);
+      // banner
+      ctx.globalAlpha = fade;
+      ctx.font = `800 ${c * 0.62}px Inter, sans-serif`;
+      const text = '🌹 RIZZ LEVEL: 0 🌹';
+      const tw = ctx.measureText(text).width + c;
+      ctx.fillStyle = '#ff4081'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, c * 0.4, tw, c * 1.05, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.fillText(text, W / 2, c * 0.92);
+    },
+  },
 ];
 
 /* =====================================================================
@@ -1296,7 +1860,7 @@ const game = {
     for (let i = 0; i < CONFIG.startLength; i++) this.snake.push({ x: cx - i, y: cy });
     this.dir = DIRS.right; this.dirQueue = [];
     this.items = []; this.fx = [];
-    this.effects.forEach(e => e.def.onDeactivate?.(this));
+    this.effects.forEach(e => e.def.onDeactivate?.(this, e));
     this.effects = [];
     this.score = 0; this.eaten = 0; this.pendingGrowth = 0;
     this.baseTick = CONFIG.baseTickMs; this.acc = 0;
@@ -1425,7 +1989,7 @@ const game = {
     this.particles(item.x, item.y, '#c21414', 16);
     if (this.eaten % CONFIG.speedUpEvery === 0)
       this.baseTick = Math.max(CONFIG.minTickMs, this.baseTick - CONFIG.speedUpMs);
-    this.effects.forEach(e => e.def.onEat?.(this, item));
+    this.effects.forEach(e => e.def.onEat?.(this, e, item));
     if (!this.items.some(i => i.kind === 'food')) this.spawnFood();
     if (Math.random() < CONFIG.powerUpSpawnChance) this.spawnPowerUp();
   },
@@ -1438,7 +2002,7 @@ const game = {
 
     // effect timers
     for (const e of this.effects) e.remaining -= dt;
-    this.effects.filter(e => e.remaining <= 0).forEach(e => e.def.onDeactivate?.(this));
+    this.effects.filter(e => e.remaining <= 0).forEach(e => e.def.onDeactivate?.(this, e));
     this.effects = this.effects.filter(e => e.remaining > 0);
     // power-ups vanish if ignored
     this.items = this.items.filter(i => i.kind !== 'power' || this.time - i.born < (i.def.lifetime ?? 8000));
@@ -1479,6 +2043,8 @@ function draw() {
   // items
   for (const it of game.items) {
     const cx = it.x * c + c / 2, cy = it.y * c + c / 2;
+    const skin = game.effects.find(e => e.def.drawItem);
+    if (skin && skin.def.drawItem(ctx, game, skin, it, cx, cy, c)) continue;
     if (it.kind === 'food') {
       const bob = 1 + Math.sin(game.time / 220 + it.x) * 0.05;
       const s = c * 1.0 * bob;
@@ -1629,19 +2195,54 @@ $('wrap').addEventListener('touchend', e => {
 /* =====================================================================
    LEADERBOARD
    ---------------------------------------------------------------------
-   Lives in the published Artifact's shared database. Each player owns
-   one document, scores/<their id>, holding their best run. Everyone can
-   read the board; each player can only write their own row (see the
-   access rules declared at publish). Opened as a local file there is no
-   database, so the board explains that and the game plays as normal.
+   Two homes, one board UI:
+   - On claude.ai (published Artifact) it uses the Artifact's shared
+     database: one document per player, scores/<their id>, best run only.
+   - Anywhere else (GitHub Pages, a local file) it uses Supabase. Scores
+     go in only through the submit_score() database function (see
+     supabase-leaderboard.sql), which keeps one best row per browser.
+   With neither available, the board says so and the game plays as normal.
    ===================================================================== */
+const SUPABASE = {
+  url: '',  // e.g. https://abcdefgh.supabase.co
+  key: '',  // the public "anon" / "publishable" key; safe to ship in the page
+};
+
+// Name filter. Mirrors the blocked_words table in supabase-leaderboard.sql,
+// which is what actually enforces it for the Supabase leaderboard.
+//   contains: blocked anywhere, even spaced out, stretched or with symbols (f.u.c.k, fuuuck, sh1t)
+//   word:     blocked only as a whole word (ass is fine inside "class")
+const BLOCKED_NAMES = {
+  contains: ['fuck', 'shit', 'bitch', 'cunt', 'nigger', 'nigga', 'faggot', 'retard', 'whore', 'slut',
+    'pussy', 'penis', 'vagina', 'porn', 'hitler', 'tranny', 'twat', 'jizz', 'asshole', 'bastard', 'dildo',
+    'pedophile', 'killyourself', 'cocksucker', 'blowjob', 'handjob', 'wetback'],
+  word: ['ass', 'fag', 'fags', 'dick', 'dicks', 'cock', 'cocks', 'cum', 'rape', 'raped', 'rapist', 'nazi',
+    'nazis', 'kike', 'spic', 'chink', 'dyke', 'sex', 'tit', 'tits', 'hoe', 'hoes', 'pedo', 'kys', 'boner',
+    'coon', 'gook', 'beaner', 'wank', 'wanker'],
+};
+function nameIsBlocked(name) {
+  const swaps = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', '@': 'a', $: 's', '!': 'i', '|': 'i', 8: 'b' };
+  const norm = name.toLowerCase().replace(/[0134578@$!|]/g, c => swaps[c]);
+  const squashed = norm.replace(/[^a-z]/g, '');
+  const tokens = norm.split(/[^a-z]+/);
+  const stretchy = w => w.split('').map(c => c + '+').join(''); // fuck also matches fuuuck
+  return BLOCKED_NAMES.contains.some(w => new RegExp(stretchy(w)).test(squashed)) ||
+    BLOCKED_NAMES.word.some(w => { const rx = new RegExp('^' + stretchy(w) + '$'); return tokens.some(t => rx.test(t)); });
+}
+
 const Leaderboard = {
+  mode: null, // 'claude' | 'supabase'
   db: null, uid: null, canWrite: null,
   rows: [], mine: null, pending: null, posted: false,
-  TOP: 15,
+  TOP: 15, POLL_MS: 20000,
 
   async init() {
-    if (!window.claude?.use) return this.status('The leaderboard isn’t connected on this copy of the game yet. Play away, scores just won’t be posted.');
+    if (!window.claude?.use) {
+      if (SUPABASE.url && SUPABASE.key) return this.initSupabase();
+      $('lbTitle').closest('aside').hidden = true; // no leaderboard on this copy: just the game
+      return;
+    }
+    this.mode = 'claude';
     const [db, user] = await Promise.all([claude.use('db'), claude.use('user')]);
     if (!db) return this.status('Sign in to claude.ai to see the leaderboard.');
     this.db = db;
@@ -1661,9 +2262,60 @@ const Leaderboard = {
     }
   },
 
+  /* ---------- Supabase ---------- */
+  async initSupabase() {
+    this.mode = 'supabase';
+    // Each browser keeps a random player id: the key to its own leaderboard row.
+    try {
+      this.player = localStorage.getItem('dawgSnakePlayer');
+      if (!this.player) { this.player = crypto.randomUUID(); localStorage.setItem('dawgSnakePlayer', this.player); }
+      this.uid = localStorage.getItem('dawgSnakeRowId');
+      this.mine = JSON.parse(localStorage.getItem('dawgSnakeMine') || 'null');
+    } catch { this.player = this.player || crypto.randomUUID(); }
+    this.status('Loading scores…');
+    try { await this.sbFetch(); }
+    catch { this.status('Couldn’t load the leaderboard. Check your connection and reload.'); }
+    setInterval(() => { if (!document.hidden) this.sbFetch().catch(() => {}); }, this.POLL_MS);
+  },
+  sbHeaders(extra = {}) {
+    const h = { apikey: SUPABASE.key, ...extra };
+    if (SUPABASE.key.startsWith('eyJ')) h.Authorization = 'Bearer ' + SUPABASE.key; // legacy JWT-style anon key
+    return h;
+  },
+  async sbFetch() {
+    const res = await fetch(`${SUPABASE.url}/rest/v1/scores?select=id,name,score&order=score.desc,updated_at.asc&limit=${this.TOP}`,
+      { headers: this.sbHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    this.rows = (await res.json()).map(r => ({ ...r, id: String(r.id) }));
+    const me = this.rows.find(r => r.id === this.uid);
+    if (me) this.mine = { name: me.name, score: me.score };
+    this.render();
+  },
+  async sbSubmit(name, run) {
+    const res = await fetch(`${SUPABASE.url}/rest/v1/rpc/submit_score`, {
+      method: 'POST',
+      headers: this.sbHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ p_player: this.player, p_name: name, p_score: run.score, p_eaten: run.eaten }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw { code: 'supabase', message: String(body.message || '') };
+    }
+    this.uid = String(await res.json());
+    this.mine = { name, score: Math.max(this.mine?.score ?? 0, run.score) };
+    try {
+      localStorage.setItem('dawgSnakeRowId', this.uid);
+      localStorage.setItem('dawgSnakeMine', JSON.stringify(this.mine));
+    } catch {}
+    await this.sbFetch().catch(() => {});
+  },
+
   status(text) { $('lbStatus').textContent = text; },
 
-  canPost() { return !!(this.db && this.uid && this.canWrite !== false); },
+  canPost() {
+    if (this.mode === 'supabase') return !!this.player;
+    return !!(this.db && this.uid && this.canWrite !== false);
+  },
 
   render() {
     const list = $('lbList');
@@ -1710,6 +2362,7 @@ const Leaderboard = {
     if (!this.canPost() || !this.pending || this.posted) return;
     const name = rawName.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 20);
     if (!name) { $('postMsg').textContent = 'Type a name first.'; return; }
+    if (nameIsBlocked(name)) { $('postMsg').textContent = 'That name isn’t allowed. Pick a different one.'; return; }
     try { localStorage.setItem('dawgSnakeName', name); } catch {}
     const prev = this.mine, run = this.pending, better = !prev || run.score > (prev.score ?? 0);
     const doc = better
@@ -1718,12 +2371,18 @@ const Leaderboard = {
     $('postBtn').disabled = true;
     $('postMsg').textContent = 'Posting…';
     try {
-      await this.db.doc('scores/' + this.uid).set(doc);
+      if (this.mode === 'supabase') await this.sbSubmit(name, run);
+      else await this.db.doc('scores/' + this.uid).set(doc);
       this.posted = true;
       $('postMsg').textContent = better ? `Posted ${run.score} as ${name}.` : `Name updated. Your best is still ${prev.score}.`;
     } catch (err) {
       $('postBtn').disabled = false;
-      if (err?.code === 'invalid_argument') {
+      if (err?.code === 'supabase') {
+        $('postMsg').textContent = /slow down/i.test(err.message) ? 'Wait a few seconds, then post again.'
+          : /not allowed/i.test(err.message) ? 'That name isn’t allowed. Pick a different one.'
+          : /out of range/i.test(err.message) ? 'That score can’t be posted.'
+          : 'Couldn’t post your score. Try again in a moment.';
+      } else if (err?.code === 'invalid_argument') {
         this.canWrite = false; this.hidePost(); this.render();
       } else {
         $('postMsg').textContent = 'Couldn’t post your score. Try again in a moment.';
