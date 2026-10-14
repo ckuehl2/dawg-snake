@@ -48,7 +48,6 @@
     background: var(--panel); border: 1px solid rgba(255,255,255,.12); font-size: 13px; font-weight: 600;
     position: relative; overflow: hidden; white-space: nowrap; flex-shrink: 0;
   }
-  .effect.debuff { border-color: #e53935; background: #2a1212; }
   .effect .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: currentColor; opacity: .8; }
   #wrap { position: relative; width: min(100%, 624px, max(300px, calc(100vh - 190px))); max-width: 100%; aspect-ratio: 1; touch-action: none; }
   canvas {
@@ -91,7 +90,7 @@
   .board-sub { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
   #lbList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
   #lbList li {
-    display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px;
+    display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 8px;
     padding: 6px 8px; border-radius: 8px; font-size: 15px;
   }
   #lbList li:nth-child(odd) { background: rgba(255,255,255,.03); }
@@ -105,8 +104,19 @@
   .lb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .lb-name small { color: var(--muted); font-weight: 400; margin-left: 4px; }
   .lb-score { font-weight: 800; font-variant-numeric: tabular-nums; }
+  .lb-ach { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .lb-name.gold { color: var(--gold); text-shadow: 0 0 8px rgba(245,197,24,.55); }
+  .lb-name.gold::before { content: '👑 '; }
+  .lb-ach.gold { color: var(--gold); }
   /* achievements */
-  .below { width: 100%; display: flex; justify-content: center; }
+  .below { width: 100%; display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .skins { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .skins span { font-size: 13px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+  .skin {
+    width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid #000;
+    box-shadow: 0 2px 0 #000; background: var(--swatch);
+  }
+  .skin[aria-pressed="true"] { outline: 3px solid var(--gold); outline-offset: 2px; }
   #achBtn { background: var(--panel); border-color: #000; }
   #achBtn[aria-expanded="true"] { background: var(--green-dark); }
   .ach-panel {
@@ -162,7 +172,7 @@
     <div id="toasts" aria-live="polite"></div>
     <div id="overlay">
       <h2 id="ovTitle">Dawg Snake</h2>
-      <p id="ovText">Guide the green dawg and devour every red D. Don't hit the walls or your own tail.</p>
+      <p id="ovText">Guide the dawg and devour every red D. Don't hit the walls or your own tail.</p>
       <p id="ovAch" hidden></p>
       <form id="postForm" hidden>
         <label for="playerName">Name for the leaderboard</label>
@@ -177,6 +187,7 @@
     </div>
   </div>
   <div class="below">
+    <div class="skins" id="skins" role="group" aria-label="Dawg color"><span>Dawg color</span></div>
     <button id="achBtn" class="small" aria-expanded="false" aria-controls="achPanel">🏆 Achievements <span id="achCount"></span></button>
   </div>
   <section id="achPanel" class="ach-panel" hidden aria-labelledby="achTitle">
@@ -226,7 +237,7 @@ const CONFIG = {
      id:        'unique-id',
      name:      'Shown in HUD',
      color:     '#hex',            // pickup glow + HUD chip color
-     type:      'buff',            // 'buff' | 'debuff' (debuffs get a red warning ring + HUD chip)
+     type:      'buff',            // 'buff' | 'debuff' (looks the same on the board; helpers like Simon skip debuffs)
      icon:      '⚡',               // emoji drawn on the board (or use draw())
      draw(ctx, x, y, size, t){},   // optional custom board sprite
      drawOverlay(ctx, game, effect){}, // draw on top of the whole board while active
@@ -1790,6 +1801,409 @@ const POWER_UPS = [
       ctx.fillStyle = '#fff'; ctx.fillText(text, W / 2, c * 0.92);
     },
   },
+
+  // Night prayer: a quiet starry night, extra points, and one miracle — the first crash is forgiven.
+  {
+    id: 'diego-lps-night-prayer',
+    name: "Diego LP's Night Prayer",
+    type: 'buff',
+    color: '#7e8cff',
+    icon: '🙏',
+    weight: 1,
+    lifetime: 8000,
+    duration: 8000,
+    overlayLayer: 0,
+    modifiers: { score: 1.5 },
+
+    onActivate(game, fx) {
+      fx.used = false; fx.amenAt = -1e9;
+      fx.stars = Array.from({ length: 40 }, () => ({ x: Math.random(), y: Math.random(), tw: Math.random() * 6, r: 0.5 + Math.random() * 1.5 }));
+      // a soft organ chord
+      [55, 59, 62, 67].forEach((n, i) => Sound.tone(Sound.midi(n), 1.8, { type: 'sine', vol: 0.06, attack: 0.4, delay: i * 0.05 }));
+    },
+
+    // One miracle per prayer: walls wrap and your own tail lets you through, once.
+    onCollide(game, kind, head, fx) {
+      if (fx.used) return false;
+      fx.used = true; fx.amenAt = game.time;
+      fx.remaining = Math.min(fx.remaining, 1500); // the prayer is answered; it fades out after the amen
+      const h = game.snake[0];
+      game.particles(h.x, h.y, '#fff3b0', 30);
+      [60, 65, 69, 72].forEach((n, i) => Sound.tone(Sound.midi(n), 0.9, { type: 'sine', vol: 0.07, delay: i * 0.12 }));
+      game.emit('miracle');
+      return true;
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 500, fx.remaining / 600);
+      const [hx, hy] = game.headPx();
+      ctx.globalAlpha = fade;
+      // night sky with a pool of candlelight around the dawg
+      const g = ctx.createRadialGradient(hx, hy, c * 1.5, hx, hy, c * 9);
+      g.addColorStop(0, 'rgba(255,190,90,0.18)');
+      g.addColorStop(0.25, 'rgba(15,20,60,0.25)');
+      g.addColorStop(1, 'rgba(10,14,50,0.6)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      for (const s of fx.stars) {
+        ctx.globalAlpha = fade * (0.4 + 0.6 * Math.abs(Math.sin(game.time / 400 + s.tw)));
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2); ctx.fill();
+      }
+      // crescent moon
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = '#fff6c2';
+      ctx.beginPath(); ctx.arc(W - c * 2.2, c * 2.2, c * 1.1, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#141a4a';
+      ctx.beginPath(); ctx.arc(W - c * 1.8, c * 1.9, c * 1.0, 0, Math.PI * 2); ctx.fill();
+      // praying hands over the dawg, or the amen once it has been used
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `${c * 0.8}px serif`;
+      if (!fx.used) ctx.fillText('🙏', hx, hy - c * 1.1 + Math.sin(game.time / 300) * 2);
+      const since = game.time - fx.amenAt;
+      if (since < 1500) {
+        ctx.globalAlpha = Math.min(1, (1500 - since) / 400);
+        ctx.font = `900 ${c * 1.8}px Inter, sans-serif`; ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#141a4a'; ctx.lineWidth = 8; ctx.fillStyle = '#fff3b0';
+        ctx.strokeText('AMEN 🙏', W / 2, H * 0.4); ctx.fillText('AMEN 🙏', W / 2, H * 0.4);
+      } else {
+        ctx.font = `700 ${c * 0.55}px Inter, sans-serif`;
+        ctx.fillStyle = '#e8eaff';
+        ctx.fillText('🕯️ one miracle granted 🕯️', W / 2, H - c * 0.8);
+      }
+    },
+  },
+
+  // Ian sings and the Ds can't resist: they shuffle toward the dawg to hear the song.
+  {
+    id: 'ian-lawlers-singing',
+    name: "Ian Lawler's Singing",
+    type: 'buff',
+    color: '#ffb300',
+    icon: '🎤',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 2,
+    modifiers: { score: 1.5 },
+    range: 9, // cells: Ds this close come to listen
+    tune: [67, 69, 71, 72, 74, 72, 71, 69, 67, 64, 65, 67, 72, 71, 69, 67],
+    lyrics: ['♪ la la laaa ♪', '♪ ooh-ooh ♪', '♪ come on over ♪', '♪ hmm-mm-mmm ♪', '♪ one more time ♪', '♪ yeahhh ♪'],
+
+    onActivate(game, fx) {
+      fx.beat = 0; fx.rings = []; fx.lyric = fx.def.lyrics[0]; fx.lyricAt = game.time;
+      Sound.tone(Sound.midi(72), 0.6, { type: 'triangle', vol: 0.1, attack: 0.08 });
+    },
+
+    onTick(game, fx) {
+      const d = fx.def, b = fx.beat++;
+      Sound.tone(Sound.midi(d.tune[b % d.tune.length]), 0.22, { type: 'triangle', vol: 0.09, attack: 0.03 });
+      if (b % 4 === 0) fx.rings.push(game.time);
+      if (game.time - fx.lyricAt > 1400) { fx.lyric = d.lyrics[Math.floor(Math.random() * d.lyrics.length)]; fx.lyricAt = game.time; }
+      if (b % 2) return; // Ds walk at half the dawg's pace
+      const h = game.snake[0];
+      const taken = new Set([...game.snake, ...game.items].map(p => p.x + ',' + p.y));
+      for (const it of game.items) {
+        if (it.kind !== 'food') continue;
+        const dx = h.x - it.x, dy = h.y - it.y;
+        if (Math.abs(dx) + Math.abs(dy) > d.range) continue;
+        const moves = Math.abs(dx) > Math.abs(dy) ? [[Math.sign(dx), 0], [0, Math.sign(dy)]] : [[0, Math.sign(dy)], [Math.sign(dx), 0]];
+        for (const [mx, my] of moves) {
+          const x = it.x + mx, y = it.y + my;
+          if ((!mx && !my) || taken.has(x + ',' + y)) continue;
+          taken.delete(it.x + ',' + it.y); taken.add(x + ',' + y);
+          it.x = x; it.y = y;
+          break;
+        }
+      }
+    },
+
+    // a little microphone held up to the dawg's mouth
+    decorateHead(ctx, game, fx, u) {
+      ctx.strokeStyle = '#000'; ctx.lineWidth = u * 0.07; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0.5 * u, 0.5 * u); ctx.lineTo(0.66 * u, 0.2 * u); ctx.stroke();
+      ctx.fillStyle = '#9e9e9e'; ctx.lineWidth = u * 0.03;
+      ctx.beginPath(); ctx.arc(0.7 * u, 0.12 * u, u * 0.1, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      const [hx, hy] = game.headPx();
+      // spotlight
+      ctx.globalAlpha = fade;
+      const g = ctx.createRadialGradient(hx, hy, c * 2, hx, hy, c * 10);
+      g.addColorStop(0, 'rgba(255,179,0,0)'); g.addColorStop(1, 'rgba(60,30,0,0.3)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      // sound waves rolling out from the dawg
+      ctx.strokeStyle = '#ffb300'; ctx.lineWidth = 3;
+      for (const t of fx.rings) {
+        const age = (game.time - t) / 1200;
+        if (age > 1) continue;
+        ctx.globalAlpha = (1 - age) * 0.7 * fade;
+        ctx.beginPath(); ctx.arc(hx, hy, c * (0.8 + age * fx.def.range), 0, Math.PI * 2); ctx.stroke();
+      }
+      fx.rings = fx.rings.filter(t => game.time - t < 1200);
+      // lyric bubble
+      ctx.globalAlpha = fade;
+      ctx.font = `800 ${c * 0.6}px Inter, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(fx.lyric).width + c;
+      const by = hy < c * 2.5 ? hy + c * 1.4 : hy - c * 1.6;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#ffb300'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(hx - tw / 2, by - c * 0.4, tw, c * 0.8, 10); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#6d4c00'; ctx.fillText(fx.lyric, hx, by);
+    },
+  },
+
+  // Carter's trombone: every few steps a big BWAAAP blasts straight ahead and eats the Ds in its path.
+  {
+    id: 'carter-versts-trombone',
+    name: "Carter Verst's Trombone",
+    type: 'buff',
+    color: '#d4a017',
+    icon: '🎺',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 2,
+    reach: 7,       // cells straight ahead
+    blastEvery: 4,  // steps between blasts
+
+    onActivate(game, fx) {
+      fx.n = 0; fx.blasts = [];
+      Sound.tone(Sound.midi(46), 0.5, { type: 'sawtooth', vol: 0.1, filter: 900, slideTo: Sound.midi(53) });
+    },
+
+    onTick(game, fx) {
+      if (++fx.n % fx.def.blastEvery) return;
+      const h = game.snake[0], d = game.dir;
+      const cells = [];
+      for (let k = 1; k <= fx.def.reach; k++) {
+        const x = h.x + d.x * k, y = h.y + d.y * k;
+        if (x < 0 || y < 0 || x >= CONFIG.cols || y >= CONFIG.rows) break;
+        cells.push({ x, y });
+      }
+      fx.blasts.push({ t: game.time, x: h.x, y: h.y, dir: d, len: cells.length });
+      // BWAAAP: a low brassy slide
+      Sound.tone(Sound.midi(41), 0.45, { type: 'sawtooth', vol: 0.12, filter: 1100, slideTo: Sound.midi(36) });
+      Sound.tone(Sound.midi(48), 0.45, { type: 'square', vol: 0.04, filter: 900, slideTo: Sound.midi(43) });
+      for (const cell of cells) {
+        const it = game.items.find(i => i.kind === 'food' && i.x === cell.x && i.y === cell.y);
+        if (!it) continue;
+        game.items.splice(game.items.indexOf(it), 1);
+        game.particles(it.x, it.y, '#d4a017', 14);
+        game.eatD(it, 'trombone');
+      }
+    },
+
+    // brass trombone sticking out of the dawg's snout
+    decorateHead(ctx, game, fx, u) {
+      const since = fx.blasts.length ? game.time - fx.blasts[fx.blasts.length - 1].t : 1e9;
+      const slide = since < 250 ? 0.18 * (1 - since / 250) : 0; // slide kicks out on each blast
+      ctx.strokeStyle = '#8d6e00'; ctx.lineWidth = u * 0.06; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0.55 * u, 0.02 * u); ctx.lineTo((0.95 + slide) * u, 0.02 * u); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0.6 * u, -0.1 * u); ctx.lineTo(0.85 * u, -0.1 * u); ctx.stroke();
+      ctx.fillStyle = '#ffd54f'; ctx.strokeStyle = '#000'; ctx.lineWidth = u * 0.03;
+      ctx.beginPath();
+      ctx.moveTo(0.85 * u, -0.13 * u); ctx.lineTo(1.1 * u, -0.3 * u); ctx.lineTo(1.1 * u, 0.1 * u); ctx.lineTo(0.85 * u, -0.07 * u);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const c = CONFIG.cell;
+      const fade = Math.min(1, fx.remaining / 600);
+      for (const b of fx.blasts) {
+        const age = (game.time - b.t) / 500;
+        if (age > 1 || !b.len) continue;
+        const x0 = b.x * c + c / 2, y0 = b.y * c + c / 2;
+        // brass sound waves marching down the lane
+        ctx.globalAlpha = (1 - age) * fade;
+        ctx.strokeStyle = '#ffca28'; ctx.lineWidth = 4;
+        const ang = Math.atan2(b.dir.y, b.dir.x);
+        for (let k = 0; k < 3; k++) {
+          const r = c * (0.9 + age * b.len + k * 0.7);
+          if (r > c * (b.len + 0.5)) continue;
+          ctx.beginPath(); ctx.arc(x0, y0, r, ang - 0.5, ang + 0.5); ctx.stroke();
+        }
+        if (age < 0.5) {
+          ctx.font = `900 ${c * 0.9}px Inter, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+          ctx.strokeStyle = '#000'; ctx.lineWidth = 5; ctx.fillStyle = '#ffca28';
+          const tx = x0 + b.dir.x * c * 2, ty = y0 + b.dir.y * c * 2 - c;
+          ctx.strokeText('BWAAAP', tx, ty); ctx.fillText('BWAAAP', tx, ty);
+        }
+      }
+      fx.blasts = fx.blasts.filter(b => game.time - b.t < 500 || b === fx.blasts[fx.blasts.length - 1]);
+    },
+  },
+
+  // The football manager relays your play calls... a couple of plays late. And you're carrying the gear.
+  {
+    id: 'justin-murray-fb-manager',
+    name: 'Justin Murray FB Manager',
+    type: 'debuff',
+    color: '#0c2340',
+    icon: '📋',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 1,
+    delay: 2,    // steps between your input and the dawg turning
+    gearSegments: 4,
+
+    onActivate(game, fx) {
+      fx.n = 0; fx.pipe = [];
+      game.grow(fx.def.gearSegments); // loaded up with water bottles and tackling dummies
+      // scribbled Xs and Os all over the board
+      fx.marks = Array.from({ length: 16 }, () => ({
+        x: Math.random(), y: Math.random(), o: Math.random() < 0.5, rot: Math.random() * 6,
+        ax: (Math.random() - 0.5) * 0.25, ay: (Math.random() - 0.5) * 0.25,
+      }));
+      Sound.tone(2200, 0.2, { type: 'square', vol: 0.05 }); // whistle
+      Sound.noise(0.2, 0.12, 1800); // clipboard slap
+    },
+
+    onBeforeStep(game, fx) {
+      fx.n++;
+      for (const d of game.dirQueue) fx.pipe.push({ d, at: fx.n + fx.def.delay });
+      game.dirQueue = [];
+      const ready = fx.pipe.filter(p => p.at <= fx.n);
+      fx.pipe = fx.pipe.filter(p => p.at > fx.n);
+      // the call arrives late; skip it if it would now send the dawg straight back into itself
+      const d = ready.length ? ready[ready.length - 1].d : null;
+      if (d && !(d.x === -game.dir.x && d.y === -game.dir.y)) game.dirQueue = [d];
+    },
+
+    // headset for relaying the play calls
+    decorateHead(ctx, game, fx, u) {
+      ctx.strokeStyle = '#212121'; ctx.lineWidth = u * 0.06;
+      ctx.beginPath(); ctx.arc(-0.05 * u, -0.05 * u, u * 0.42, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+      ctx.fillStyle = '#212121';
+      ctx.beginPath(); ctx.arc(-0.42 * u, -0.12 * u, u * 0.1, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = u * 0.035;
+      ctx.beginPath(); ctx.moveTo(-0.4 * u, -0.05 * u); ctx.quadraticCurveTo(-0.2 * u, 0.4 * u, 0.25 * u, 0.25 * u); ctx.stroke();
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const fade = Math.min(1, (fx.def.duration - fx.remaining) / 400, fx.remaining / 600);
+      // whiteboard haze
+      ctx.globalAlpha = 0.18 * fade;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      // marker plays
+      ctx.globalAlpha = 0.75 * fade;
+      ctx.strokeStyle = '#0c2340'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      for (const m of fx.marks) {
+        const x = m.x * W, y = m.y * H, r = c * 0.55;
+        ctx.beginPath();
+        if (m.o) ctx.arc(x, y, r, 0, Math.PI * 2);
+        else { ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); }
+        ctx.stroke();
+        // route arrow
+        const ex = x + m.ax * W, ey = y + m.ay * H;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + m.ax * W * 0.2, ey, ex, ey); ctx.stroke();
+        const a = Math.atan2(ey - y, ex - (x + m.ax * W * 0.2));
+        ctx.beginPath();
+        ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(a - 0.5) * c * 0.4, ey - Math.sin(a - 0.5) * c * 0.4);
+        ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(a + 0.5) * c * 0.4, ey - Math.sin(a + 0.5) * c * 0.4);
+        ctx.stroke();
+      }
+      // banner
+      ctx.globalAlpha = fade;
+      ctx.font = `800 ${c * 0.6}px Inter, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const text = '📋 PLAY CALLS RELAYED LATE';
+      const tw = ctx.measureText(text).width + c;
+      ctx.fillStyle = '#0c2340'; ctx.strokeStyle = '#c99700'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, H - c * 1.6, tw, c * 1.1, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.fillText(text, W / 2, H - c * 1.05);
+    },
+  },
+
+  // Charlie's bed breaks: the board cracks and shakes, feathers everywhere, and the busted springs
+  // keep launching the dawg an extra hop forward.
+  {
+    id: 'charlie-trues-bed',
+    name: "Charlie True's Bed",
+    type: 'debuff',
+    color: '#8d6e63',
+    icon: '🛏️',
+    weight: 1,
+    lifetime: 8000,
+    duration: 7000,
+    overlayLayer: 9, // drawn last, so the shake moves everything
+    hopEvery: 4, // steps between spring launches
+
+    onActivate(game, fx) {
+      fx.n = 0; fx.t0 = game.time; fx.shakeUntil = game.time + 600; fx.hopAt = -1e9;
+      fx.cracks = Array.from({ length: 5 }, () => {
+        let x = Math.random(), y = Math.random(), a = Math.random() * Math.PI * 2;
+        const pts = [[x, y]];
+        for (let i = 0; i < 6; i++) { a += (Math.random() - 0.5) * 1.4; x += Math.cos(a) * 0.07; y += Math.sin(a) * 0.07; pts.push([x, y]); }
+        return pts;
+      });
+      fx.feathers = Array.from({ length: 14 }, () => ({ x: Math.random(), y: -Math.random() * 0.6, sway: Math.random() * 6, sp: 0.00004 + Math.random() * 0.00006 }));
+      fx.lastT = game.time;
+      Sound.noise(0.5, 0.35, 200);  // CRACK
+      Sound.tone(90, 0.5, { type: 'square', vol: 0.1, slideTo: 40 });
+    },
+
+    // the springs fire: one extra step forward, right now
+    onTick(game, fx) {
+      if (fx.hopping || ++fx.n % fx.def.hopEvery) return;
+      fx.hopping = true;
+      fx.hopAt = game.time; fx.shakeUntil = game.time + 250;
+      Sound.tone(220, 0.2, { type: 'sine', vol: 0.1, slideTo: 660 }); // boing
+      game.step();
+      fx.hopping = false;
+      if (game.state === 'playing') game.emit('springHop');
+    },
+
+    onDeactivate(game, fx) {
+      if (fx && game.state === 'playing') game.emit('bedSurvived');
+    },
+
+    drawOverlay(ctx, game, fx) {
+      const W = ctx.canvas.width, H = ctx.canvas.height, c = CONFIG.cell;
+      const playing = game.state === 'playing';
+      const dt = playing ? game.time - fx.lastT : 0;
+      fx.lastT = game.time;
+      const fade = Math.min(1, fx.remaining / 600);
+      ctx.globalAlpha = fade;
+      // cracks in the frame
+      ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      for (const pts of fx.cracks) {
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)));
+        ctx.stroke();
+      }
+      // pillow feathers drifting down
+      ctx.font = `${c * 0.8}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const f of fx.feathers) {
+        f.y += f.sp * dt; if (f.y > 1.1) f.y = -0.1;
+        ctx.save();
+        ctx.translate(f.x * W + Math.sin(game.time / 500 + f.sway) * c, f.y * H);
+        ctx.rotate(Math.sin(game.time / 400 + f.sway) * 0.6);
+        ctx.fillStyle = '#000'; ctx.fillText('🪶', 0, 0);
+        ctx.restore();
+      }
+      // CRACK! / BOING! banners
+      const banner = (text, at, ms, color) => {
+        const since = game.time - at;
+        if (since >= ms) return;
+        ctx.globalAlpha = Math.min(1, (ms - since) / 300) * fade;
+        ctx.font = `900 ${c * 1.6}px Inter, sans-serif`; ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 8; ctx.fillStyle = color;
+        ctx.strokeText(text, W / 2, H * 0.3); ctx.fillText(text, W / 2, H * 0.3);
+      };
+      banner('CRACK! 🛏️💥', fx.t0, 1300, '#ffccbc');
+      banner('BOING!', fx.hopAt, 450, '#fff59d');
+      ctx.globalAlpha = 1;
+      // the whole bed frame shakes
+      if (game.time < fx.shakeUntil) {
+        const m = c * 0.25, dx = (Math.random() - 0.5) * m * 2, dy = (Math.random() - 0.5) * m * 2;
+        ctx.drawImage(ctx.canvas, dx, dy);
+      }
+    },
+  },
 ];
 
 /* =====================================================================
@@ -1827,7 +2241,7 @@ const Sprites = {
     ];
     ctx.lineJoin = 'round';
     P(head);
-    ctx.fillStyle = '#1f6b22'; ctx.fill();
+    ctx.fillStyle = Skins.current.body; ctx.fill();
     ctx.lineWidth = u * 0.065; ctx.strokeStyle = '#000'; ctx.stroke();
 
     // white fur highlights
@@ -1859,6 +2273,52 @@ const Sprites = {
     half.forEach((p, i) => { const [a, b] = pt(p); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
     for (let i = half.length - 1; i >= 0; i--) { const [a, b] = pt([-half[i][0], half[i][1]]); ctx.lineTo(a, b); }
     ctx.closePath(); ctx.fill();
+  },
+};
+
+/* =====================================================================
+   DAWG COLORS
+   ---------------------------------------------------------------------
+   Pick one under the board; it's remembered in this browser.
+   body = the dawg's main color, stripe = the lighter fur stripe down its back.
+   ===================================================================== */
+const SKINS = [
+  { id: 'green',  name: 'Classic Green',    body: '#1f6b22', stripe: '#2f8a33' },
+  { id: 'gold',   name: 'Golden Dome',      body: '#c99700', stripe: '#e8c33f' },
+  { id: 'navy',   name: 'Navy',             body: '#0c2340', stripe: '#24487a' },
+  { id: 'red',    name: 'Fire Red',         body: '#b71c1c', stripe: '#e53935' },
+  { id: 'purple', name: 'Royal Purple',     body: '#5e2a9c', stripe: '#8a52d1' },
+  { id: 'orange', name: 'Blaze Orange',     body: '#e65100', stripe: '#ff8a3d' },
+  { id: 'pink',   name: 'Hot Pink',         body: '#d81b77', stripe: '#ff5fa8' },
+  { id: 'ice',    name: 'Ice Blue',         body: '#1e88c7', stripe: '#6cc6f5' },
+  { id: 'black',  name: 'Midnight',         body: '#262626', stripe: '#4d4d4d' },
+  { id: 'white',  name: 'Snow',             body: '#d9d9d9', stripe: '#f5f5f5' },
+];
+const Skins = {
+  KEY: 'dawgSnakeSkin',
+  current: SKINS[0],
+  load() {
+    let id = null;
+    try { id = localStorage.getItem(this.KEY); } catch {}
+    this.current = SKINS.find(s => s.id === id) || SKINS[0];
+    const box = $('skins');
+    for (const s of SKINS) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'skin'; b.title = s.name;
+      b.setAttribute('aria-label', s.name);
+      b.style.setProperty('--swatch', `linear-gradient(135deg, ${s.body} 55%, ${s.stripe} 55%)`);
+      b.addEventListener('click', () => { this.pick(s); b.blur(); }); // blur so Space keeps controlling the game
+      box.append(b);
+    }
+    this.render();
+  },
+  pick(s) {
+    this.current = s;
+    try { localStorage.setItem(this.KEY, s.id); } catch {}
+    this.render();
+  },
+  render() {
+    [...$('skins').querySelectorAll('.skin')].forEach((b, i) => b.setAttribute('aria-pressed', String(SKINS[i] === this.current)));
   },
 };
 
@@ -1955,7 +2415,7 @@ const game = {
     if (this.state === 'over') return;
     this.state = 'over';
     const head = this.snake[0];
-    this.particles(head.x, head.y, '#1f6b22', 30);
+    this.particles(head.x, head.y, Skins.current.body, 30);
     if (this.score > this.best) { this.best = this.score; saveBest(this.best); }
     updateHud();
     [[60, 0], [56, 0.18], [51, 0.36]].forEach(([n, d]) =>
@@ -2148,12 +2608,6 @@ function draw() {
     } else {
       const def = it.def, age = game.time - it.born, life = def.lifetime ?? 8000;
       if (life - age < 2000 && Math.floor(age / 120) % 2) continue; // blink before vanishing
-      if (def.type === 'debuff') { // pulsing red warning ring
-        ctx.save(); ctx.strokeStyle = '#e53935'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
-        ctx.lineDashOffset = game.time / 40;
-        ctx.beginPath(); ctx.arc(cx, cy, c * (0.62 + Math.sin(game.time / 120) * 0.05), 0, Math.PI * 2); ctx.stroke();
-        ctx.restore();
-      }
       if (def.draw) { def.draw(ctx, cx, cy, c, game.time); continue; }
       const pulse = 1 + Math.sin(game.time / 150) * 0.1;
       ctx.save();
@@ -2185,9 +2639,9 @@ function draw() {
   };
   if (tint) { ctx.save(); ctx.shadowColor = tint; ctx.shadowBlur = 16; ribbon(c * 0.86, tint); ctx.restore(); }
   ribbon(c * 0.86, '#000');
-  ribbon(c * 0.66, '#1f6b22');
+  ribbon(c * 0.66, Skins.current.body);
   // fur stripe + scruff
-  ribbon(c * 0.16, '#2f8a33');
+  ribbon(c * 0.16, Skins.current.stripe);
   for (let i = 2; i < s.length; i += 3) {
     ctx.fillStyle = 'rgba(255,255,255,.85)';
     ctx.beginPath(); ctx.arc(pts[i][0] - c * 0.12, pts[i][1] - c * 0.12, c * 0.08, 0, Math.PI * 2); ctx.fill();
@@ -2244,7 +2698,7 @@ function renderEffectsHud() {
   if (key !== lastEffectsKey) {
     lastEffectsKey = key;
     box.innerHTML = game.effects.map(e =>
-      `<div class="effect ${e.def.type === 'debuff' ? 'debuff' : ''}" data-id="${e.def.id}" style="color:${e.def.color}">${e.def.icon ?? '★'}
+      `<div class="effect" data-id="${e.def.id}" style="color:${e.def.color}">${e.def.icon ?? '★'}
         <span style="color:var(--text)">${e.def.name}</span><div class="bar"></div></div>`).join('');
   }
   for (const e of game.effects) {
@@ -2364,6 +2818,14 @@ const ACHIEVEMENTS = [
   { id: 'broken-tackle', icon: '💪', name: 'Broken Tackle', desc: 'Break a tackle through your own tail with Don.', on: { tackle: () => true } },
   { id: 'shot-your-shot', icon: '🌹', name: 'Shot Your Shot', desc: "Catch a girl during Pat Burke's Rizz.",
     on: { eat: (g, s, d) => byDawg(d) && g.isActive('pat-burkes-rizz') } },
+  { id: 'answered-prayer', icon: '🕯️', name: 'Answered Prayer', desc: "Get saved from a crash by Diego LP's Night Prayer.", on: { miracle: () => true } },
+  { id: 'encore', icon: '🎤', name: 'Encore', desc: "Eat 4 Ds during one round of Ian Lawler's Singing.",
+    on: { eat: g => countDuring(g, 'ian-lawlers-singing', 'encore') >= 4 } },
+  { id: 'brass-section', icon: '🎺', name: 'Brass Section', desc: "Blast 3 Ds with one Carter Verst's Trombone.",
+    on: { eat: (g, s, d) => d.by === 'trombone' && countDuring(g, 'carter-versts-trombone', 'blast') >= 3 } },
+  { id: 'water-boy', icon: '📋', name: 'Audible', desc: 'Eat 2 Ds while Justin Murray relays your play calls.',
+    on: { eat: (g, s, d) => byDawg(d) && countDuring(g, 'justin-murray-fb-manager', 'audible') >= 2 } },
+  { id: 'bed-survivor', icon: '🛏️', name: 'Slept on the Floor', desc: "Survive Charlie True's Bed until it wears off.", on: { bedSurvived: () => true } },
 
   // ---- secret ----
   { id: 'cursed', icon: '🌚', name: 'Cursed', desc: 'Have Darman Darkness and E Man\u2019s Yo Yo Yo at the same time.', secret: true,
@@ -2390,6 +2852,7 @@ const Achievements = {
   },
 
   startRun() { this.run = []; $('ovAch').hidden = true; },
+  count() { return ACHIEVEMENTS.filter(a => this.unlocked[a.id]).length; },
 
   emit(event, data) {
     const s = this.stats;
@@ -2578,7 +3041,7 @@ const Leaderboard = {
     return h;
   },
   async sbFetch() {
-    const res = await fetch(`${SUPABASE.url}/rest/v1/scores?select=id,name,score&order=score.desc,updated_at.asc&limit=${this.TOP}`,
+    const res = await fetch(`${SUPABASE.url}/rest/v1/scores?select=id,name,score,achievements&order=score.desc,updated_at.asc&limit=${this.TOP}`,
       { headers: this.sbHeaders() });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     this.rows = (await res.json()).map(r => ({ ...r, id: String(r.id) }));
@@ -2590,7 +3053,7 @@ const Leaderboard = {
     const res = await fetch(`${SUPABASE.url}/rest/v1/rpc/submit_score`, {
       method: 'POST',
       headers: this.sbHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ p_player: this.player, p_name: name, p_score: run.score, p_eaten: run.eaten }),
+      body: JSON.stringify({ p_player: this.player, p_name: name, p_score: run.score, p_eaten: run.eaten, p_achievements: Achievements.count() }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -2622,9 +3085,15 @@ const Leaderboard = {
       const name = document.createElement('span'); name.className = 'lb-name';
       name.textContent = String(r.name || 'Anonymous dawg');
       if (r.id === this.uid) { const you = document.createElement('small'); you.textContent = '(you)'; name.append(you); }
+      // achievement count; everything unlocked = golden name
+      const got = Math.max(0, Math.floor(Number(r.achievements) || 0)), all = got >= ACHIEVEMENTS.length;
+      const ach = document.createElement('span'); ach.className = 'lb-ach' + (all ? ' gold' : '');
+      ach.textContent = '🏆 ' + Math.min(got, ACHIEVEMENTS.length);
+      ach.title = `${Math.min(got, ACHIEVEMENTS.length)}/${ACHIEVEMENTS.length} achievements`;
+      if (all) name.classList.add('gold');
       const score = document.createElement('span'); score.className = 'lb-score';
       score.textContent = Number(r.score) || 0;
-      li.append(rank, name, score);
+      li.append(rank, name, ach, score);
       list.append(li);
     });
 
@@ -2661,8 +3130,8 @@ const Leaderboard = {
     try { localStorage.setItem('dawgSnakeName', name); } catch {}
     const prev = this.mine, run = this.pending, better = !prev || run.score > (prev.score ?? 0);
     const doc = better
-      ? { name, score: run.score, eaten: run.eaten, at: new Date().toISOString() }
-      : { ...prev, name };
+      ? { name, score: run.score, eaten: run.eaten, achievements: Achievements.count(), at: new Date().toISOString() }
+      : { ...prev, name, achievements: Achievements.count() };
     $('postBtn').disabled = true;
     $('postMsg').textContent = 'Posting…';
     try {
@@ -2711,6 +3180,7 @@ function loop(now) {
 })();
 Leaderboard.init();
 Achievements.load();
+Skins.load();
 
 // Expose for console tinkering / future power-up dev
 window.game = game; window.POWER_UPS = POWER_UPS; window.CONFIG = CONFIG; window.Sound = Sound;
