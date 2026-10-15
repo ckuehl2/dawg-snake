@@ -109,6 +109,15 @@
   .lb-name.gold { color: var(--gold); text-shadow: 0 0 8px rgba(245,197,24,.55); }
   .lb-name.gold::before { content: '👑 '; }
   .lb-ach.gold { color: var(--gold); }
+  /* banned list */
+  .board.banned { box-shadow: 0 0 0 2px #e53935; }
+  .board.banned h2 { color: #ff8a80; font-size: 26px; }
+  #banList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #banList li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 6px 8px; border-radius: 8px; background: rgba(229,57,53,.08); }
+  #banList .ban-icon { grid-row: span 2; align-self: center; font-size: 18px; }
+  #banList strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through; text-decoration-color: #e53935; }
+  #banList span.ban-why { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+  #overlay.locked h2 { color: #ff8a80; }
   /* achievements */
   .below {
     background: var(--panel); border: 2px solid #000; box-shadow: 0 0 0 2px var(--green); border-radius: 12px;
@@ -219,10 +228,18 @@
   <p class="board-sub" id="lbStatus">Loading scores…</p>
   <ol id="lbList"></ol>
 </aside>
+<aside class="board banned" id="banBoard" aria-labelledby="banTitle" hidden>
+  <h2 id="banTitle">🚫 Banned</h2>
+  <p class="board-sub">Caught cheating. Their scores are off the board and they can't play.</p>
+  <ul id="banList"></ul>
+</aside>
 </div>
 </main>
 
 <script>
+// Everything lives inside this function so nothing here can be reached from
+// the console (or by a script someone pastes in) to drive the game or set a score.
+(() => {
 'use strict';
 
 /* =====================================================================
@@ -2421,10 +2438,19 @@ const game = {
     this.spawnFood();
     updateHud();
   },
-  start() { Sound.unlock(); this.reset(); this.state = 'playing'; hideOverlay(); Leaderboard.hidePost(); Achievements.startRun(); },
+  start() {
+    if (Ban.locked) return;
+    Sound.unlock(); this.reset(); this.state = 'playing'; hideOverlay(); Leaderboard.hidePost(); Achievements.startRun();
+    AntiCheat.startRun(); Leaderboard.startRun();
+  },
   emit(event, data = {}) { Achievements.emit(event, data); }, // achievement events (see ACHIEVEMENTS)
-  pause() {
-    if (this.state === 'playing') { this.state = 'paused'; Leaderboard.hidePost(); showOverlay('Paused', 'Take a breather.', 'Resume'); }
+  // auto = paused by the game itself (tab hidden), which doesn't count toward the pause limit
+  pause(auto = false) {
+    if (this.state === 'playing') {
+      this.state = 'paused'; Leaderboard.hidePost();
+      if (!auto) AntiCheat.pauses++;
+      showOverlay('Paused', 'Take a breather. The board is hidden while paused.', 'Resume');
+    }
     else if (this.state === 'paused') { this.state = 'playing'; hideOverlay(); }
   },
   gameOver(reason = '') {
@@ -2495,7 +2521,8 @@ const game = {
 
   /* ---------- input ---------- */
   turn(name) {
-    if (this.state === 'menu' || this.state === 'over') return;
+    // no lining up moves while paused: you have to steer in real time
+    if (this.state !== 'playing') return;
     const d = DIRS[name];
     const last = this.dirQueue.length ? this.dirQueue[this.dirQueue.length - 1] : this.dir;
     if (d === last || (d.x === -last.x && d.y === -last.y)) return;
@@ -2606,6 +2633,11 @@ const game = {
    ===================================================================== */
 function draw() {
   const { cols, rows, cell: c } = CONFIG;
+  // Paused or banned: hide the board, so nobody (or no AI) can freeze the game to study it.
+  if (game.state === 'paused' || Ban.locked) {
+    ctx.fillStyle = '#0b1a0f'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
   // checkered turf
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
     ctx.fillStyle = (x + y) % 2 ? '#e9efe6' : '#f6f9f4';
@@ -2728,7 +2760,10 @@ function showOverlay(title, text, btn) {
 }
 function hideOverlay() { $('overlay').classList.add('hidden'); }
 
-$('ovBtn').addEventListener('click', () => game.state === 'paused' ? game.pause() : game.start());
+$('ovBtn').addEventListener('click', e => {
+  if (!AntiCheat.realInput(e)) return;
+  game.state === 'paused' ? game.pause() : game.start();
+});
 
 const KEYS = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
@@ -2736,6 +2771,7 @@ const KEYS = {
 };
 window.addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea')) return; // typing a name
+  if (!AntiCheat.realInput(e)) return;
   if (KEYS[e.code]) { e.preventDefault(); game.turn(KEYS[e.code]); return; }
   if (e.code === 'KeyM') { Sound.unlock(); Sound.toggleMute(); return; }
   if (e.code === 'Space' || e.code === 'Escape' || e.code === 'KeyP') {
@@ -2751,12 +2787,106 @@ window.addEventListener('keydown', e => {
 let touch0 = null;
 $('wrap').addEventListener('touchstart', e => { touch0 = e.touches[0]; }, { passive: true });
 $('wrap').addEventListener('touchend', e => {
-  if (!touch0) return;
+  if (!touch0 || !AntiCheat.realInput(e)) return;
   const t = e.changedTouches[0], dx = t.clientX - touch0.clientX, dy = t.clientY - touch0.clientY;
   touch0 = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
   game.turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
 });
+
+// Leaving the tab pauses the game (doesn't count toward the pause limit).
+document.addEventListener('visibilitychange', () => { if (document.hidden && game.state === 'playing') game.pause(true); });
+
+/* =====================================================================
+   ANTICHEAT
+   ---------------------------------------------------------------------
+   Catches the ways a bot or an AI agent plays for someone:
+   - fake key presses sent from a script (the browser marks them untrusted)
+   - a browser being remote-controlled by automation tools
+   - pausing over and over to study the board (the board is also hidden
+     while paused, and moves can't be lined up during a pause)
+   A run that trips any of these can't be posted. The database adds its own
+   check (see supabase-leaderboard.sql): the score has to fit how long the
+   run really lasted, timed on the server.
+   ===================================================================== */
+const AntiCheat = {
+  MAX_PAUSES: 15, // per run; real players pause a few times, an AI stepping through needs hundreds
+  pauses: 0,
+  flags: new Set(),
+
+  startRun() {
+    this.pauses = 0;
+    this.flags = new Set();
+    if (navigator.webdriver) this.flags.add('automation');
+  },
+
+  // false for input events made by a script instead of a real keyboard, mouse or finger
+  realInput(e) {
+    if (e.isTrusted) return true;
+    if (game.state === 'playing' || game.state === 'paused') this.flags.add('synthetic');
+    return false;
+  },
+
+  // Why this run can't go on the board, or '' if it's clean.
+  problem() {
+    if (this.pauses > this.MAX_PAUSES) this.flags.add('pauses');
+    if (this.flags.has('synthetic')) return 'the game was played by a script, not a keyboard.';
+    if (this.flags.has('automation')) return 'this browser is being controlled by automation software.';
+    if (this.flags.has('pauses')) return `you paused ${this.pauses} times (the limit is ${this.MAX_PAUSES}).`;
+    return '';
+  },
+};
+
+/* =====================================================================
+   BANS
+   ---------------------------------------------------------------------
+   The ban list lives in the database (banned_players). On load the game
+   asks is_banned() about this browser's player id. A banned browser
+   remembers it in two places (localStorage and a cookie), locks the
+   game right away on later visits, and sends those ids along so a fresh
+   player id from the same browser is banned too.
+   ===================================================================== */
+const Ban = {
+  KEY: 'dawgSnakeBan',
+  locked: false,
+
+  // player ids this browser has been banned under
+  ids() {
+    const ids = new Set();
+    try { JSON.parse(localStorage.getItem(this.KEY) || '[]').forEach(id => ids.add(id)); } catch {}
+    const m = document.cookie.match(/(?:^|; )dawgSnakeBan=([^;]*)/);
+    if (m) decodeURIComponent(m[1]).split(',').filter(Boolean).forEach(id => ids.add(id));
+    return [...ids].filter(id => /^[0-9a-f-]{36}$/i.test(id));
+  },
+  remember(id) {
+    const ids = [...new Set([...this.ids(), id].filter(Boolean))];
+    try { localStorage.setItem(this.KEY, JSON.stringify(ids)); } catch {}
+    document.cookie = `dawgSnakeBan=${encodeURIComponent(ids.join(','))}; max-age=${60 * 60 * 24 * 3650}; path=/; SameSite=Lax`;
+  },
+  forget() {
+    try { localStorage.removeItem(this.KEY); } catch {}
+    document.cookie = 'dawgSnakeBan=; max-age=0; path=/';
+  },
+
+  lock(playerId) {
+    if (playerId) this.remember(playerId);
+    this.locked = true;
+    if (game.state === 'playing' || game.state === 'paused') game.state = 'over';
+    Leaderboard.hidePost();
+    $('ovAch').hidden = true;
+    $('overlay').classList.add('locked');
+    showOverlay('Banned', 'This player is banned from Dawg Snake for cheating. The game is locked and scores from here won’t count.', '');
+    $('ovBtn').hidden = true;
+  },
+  unlock() {
+    this.forget();
+    if (!this.locked) return;
+    this.locked = false;
+    $('overlay').classList.remove('locked');
+    $('ovBtn').hidden = false;
+    showOverlay('Dawg Snake', 'Guide the dawg and devour every red D. Don\'t hit the walls or your own tail.', 'Play');
+  },
+};
 
 /* =====================================================================
    ACHIEVEMENTS
@@ -3046,10 +3176,64 @@ const Leaderboard = {
       this.uid = localStorage.getItem('dawgSnakeRowId');
       this.mine = JSON.parse(localStorage.getItem('dawgSnakeMine') || 'null');
     } catch { this.player = this.player || crypto.randomUUID(); }
+    if (Ban.ids().length) Ban.lock(); // banned here before: lock now, then confirm with the database
+    this.sbCheckBan().catch(() => {});
+    this.sbFetchBans().catch(() => {});
     this.status('Loading scores…');
     try { await this.sbFetch(); }
     catch { this.status('Couldn’t load the leaderboard. Check your connection and reload.'); }
-    setInterval(() => { if (!document.hidden) this.sbFetch().catch(() => {}); }, this.POLL_MS);
+    setInterval(() => {
+      if (document.hidden) return;
+      this.sbFetch().catch(() => {});
+      this.sbFetchBans().catch(() => {});
+    }, this.POLL_MS);
+  },
+  async sbRpc(fn, args) {
+    const res = await fetch(`${SUPABASE.url}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: this.sbHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(args),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw { code: 'supabase', status: res.status, message: String(body.message || '') };
+    }
+    return res.json();
+  },
+  async sbCheckBan() {
+    const banned = await this.sbRpc('is_banned', { p_player: this.player, p_linked: Ban.ids() });
+    if (banned === true) Ban.lock(this.player);
+    else if (banned === false) Ban.unlock(); // an explicit "no" from the database lifts a remembered ban
+  },
+  async sbFetchBans() {
+    const res = await fetch(`${SUPABASE.url}/rest/v1/banned_players?select=name,reason,banned_at&order=banned_at.desc&limit=50`,
+      { headers: this.sbHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    this.renderBans(await res.json());
+  },
+  renderBans(rows) {
+    $('banBoard').hidden = !rows.length;
+    const list = $('banList');
+    list.replaceChildren();
+    for (const r of rows) {
+      const li = document.createElement('li');
+      const icon = document.createElement('span'); icon.className = 'ban-icon'; icon.textContent = '🚫';
+      const name = document.createElement('strong'); name.textContent = String(r.name || 'Unknown');
+      const why = document.createElement('span'); why.className = 'ban-why';
+      const when = new Date(r.banned_at);
+      why.textContent = String(r.reason || 'Cheating') + (isNaN(when) ? '' : ` · ${when.toLocaleDateString()}`);
+      li.append(icon, name, why);
+      list.append(li);
+    }
+  },
+  // Called when a game starts: the database times the run from here.
+  startRun() {
+    this.run = null;
+    if (this.mode !== 'supabase' || !this.player) return;
+    this.run = this.sbRpc('start_run', { p_player: this.player }).catch(err => {
+      if (/banned/i.test(err?.message)) Ban.lock(this.player);
+      return null;
+    });
   },
   sbHeaders(extra = {}) {
     const h = { apikey: SUPABASE.key, ...extra };
@@ -3066,16 +3250,12 @@ const Leaderboard = {
     this.render();
   },
   async sbSubmit(name, run) {
-    const res = await fetch(`${SUPABASE.url}/rest/v1/rpc/submit_score`, {
-      method: 'POST',
-      headers: this.sbHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ p_player: this.player, p_name: name, p_score: run.score, p_eaten: run.eaten, p_achievements: Achievements.count() }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw { code: 'supabase', message: String(body.message || '') };
-    }
-    this.uid = String(await res.json());
+    const runId = await run.runId;
+    if (!runId) throw { code: 'supabase', message: 'Run not recognized' };
+    this.uid = String(await this.sbRpc('submit_score', {
+      p_player: this.player, p_name: name, p_score: run.score, p_eaten: run.eaten,
+      p_achievements: Achievements.count(), p_run: runId,
+    }));
     this.mine = { name, score: Math.max(this.mine?.score ?? 0, run.score) };
     try {
       localStorage.setItem('dawgSnakeRowId', this.uid);
@@ -3125,10 +3305,13 @@ const Leaderboard = {
 
   // Called on game over: show the name box if this run can go on the board.
   offerPost(score, eaten) {
-    this.pending = { score, eaten }; this.posted = false;
-    const form = $('postForm');
-    if (!this.canPost() || score <= 0) { form.hidden = true; return; }
+    this.pending = { score, eaten, runId: this.run }; this.posted = false;
+    const form = $('postForm'), row = form.querySelector('.post-row');
+    if (Ban.locked || !this.canPost() || score <= 0) { form.hidden = true; return; }
     form.hidden = false;
+    const problem = AntiCheat.problem();
+    row.hidden = !!problem;
+    if (problem) { this.pending = null; $('postMsg').textContent = `🚫 This run can’t go on the leaderboard: ${problem}`; return; }
     $('postBtn').disabled = false;
     const best = this.mine?.score ?? 0;
     $('postMsg').textContent = best >= score ? `Your best is ${best}. Posting updates your name only.` : '';
@@ -3157,8 +3340,13 @@ const Leaderboard = {
       $('postMsg').textContent = better ? `Posted ${run.score} as ${name}.` : `Name updated. Your best is still ${prev.score}.`;
     } catch (err) {
       $('postBtn').disabled = false;
-      if (err?.code === 'supabase') {
+      if (err?.code === 'supabase' && err.message === 'Banned') {
+        Ban.lock(this.player);
+      } else if (err?.code === 'supabase') {
         $('postMsg').textContent = /slow down/i.test(err.message) ? 'Wait a few seconds, then post again.'
+          : /banned name/i.test(err.message) ? 'That name belongs to a banned player. Pick a different one.'
+          : /anticheat/i.test(err.message) ? '🚫 This run didn’t pass the anticheat check, so it can’t be posted.'
+          : /run not recognized/i.test(err.message) ? 'This run couldn’t be verified (the leaderboard was unreachable when it started).'
           : /not allowed/i.test(err.message) ? 'That name isn’t allowed. Pick a different one.'
           : /out of range/i.test(err.message) ? 'That score can’t be posted.'
           : 'Couldn’t post your score. Try again in a moment.';
@@ -3197,9 +3385,7 @@ function loop(now) {
 Leaderboard.init();
 Achievements.load();
 Skins.load();
-
-// Expose for console tinkering / future power-up dev
-window.game = game; window.POWER_UPS = POWER_UPS; window.CONFIG = CONFIG; window.Sound = Sound;
+})();
 </script>
 </body>
 </html>
